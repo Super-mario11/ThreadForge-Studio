@@ -35,6 +35,7 @@ ThreadForge Studio is a full-stack custom apparel platform where shoppers can ge
 - Provide Cloudinary credentials for image storage
 - Provide OpenAI key for prompt-based image generation
 - Set CORS origins to your deployed frontend host
+- If using MongoDB Atlas, ensure Atlas Network Access allows your host (Render often requires temporarily allowing `0.0.0.0/0`), and set `MONGODB_URI` in your hosting provider’s environment variables
 - Build frontend with `npm run build --workspace frontend`
 - Start backend with `npm run start --workspace backend`
 # ThreadForge-Studio

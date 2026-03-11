@@ -3,6 +3,7 @@ import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import mongoose from 'mongoose';
 import authRoutes from './routes/auth.routes.js';
 import productRoutes from './routes/product.routes.js';
 import designRoutes from './routes/design.routes.js';
@@ -39,7 +40,11 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, service: 'threadforge-api' });
+  res.json({
+    ok: true,
+    service: 'threadforge-api',
+    db: { readyState: mongoose.connection.readyState }
+  });
 });
 
 app.use('/api/auth', authRoutes);
