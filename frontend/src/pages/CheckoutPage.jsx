@@ -62,7 +62,7 @@ export default function CheckoutPage() {
       <SectionTitle
         eyebrow="Checkout"
         title="Ship the finished pieces"
-        description="Production-ready checkout with address capture, payment intent creation, and confirmation handling."
+        description="Enter shipping details."
       />
 
       <div className="mt-10 grid gap-8 lg:grid-cols-[1fr_360px]">
@@ -81,7 +81,11 @@ export default function CheckoutPage() {
             <Input label="Postal Code" value={address.postalCode} onChange={(value) => setAddress((current) => ({ ...current, postalCode: value }))} />
             <Input label="Country" value={address.country} onChange={(value) => setAddress((current) => ({ ...current, country: value }))} />
           </div>
-          <button type="submit" disabled={submitting || !items.length} className="mt-6 w-full rounded-full bg-ink px-5 py-4 text-sm font-bold uppercase tracking-[0.2em] text-paper disabled:opacity-50">
+          <button
+            type="submit"
+            disabled={submitting || !items.length}
+            className="mt-6 w-full rounded-full bg-accent-gradient px-5 py-4 text-sm font-bold uppercase tracking-[0.2em] text-white shadow-glow transition hover:-translate-y-0.5 active:scale-[0.99] disabled:opacity-50"
+          >
             {submitting ? 'Processing...' : 'Pay and Place Order'}
           </button>
           {error ? <p className="mt-4 text-sm text-crimson">{error}</p> : null}

@@ -1,11 +1,13 @@
 import { Link } from 'react-router-dom';
-import { Trash2 } from 'lucide-react';
+import { Minus, Plus, Trash2 } from 'lucide-react';
 import SectionTitle from '../components/SectionTitle.jsx';
 import { currency } from '../lib/format.js';
 import { useCart } from '../providers/CartProvider.jsx';
+import { useToast } from '../providers/ToastProvider.jsx';
 
 export default function CartPage() {
   const { items, subtotal, removeItem, updateQuantity } = useCart();
+  const toast = useToast();
   const shipping = subtotal > 100 ? 0 : 9;
   const tax = subtotal * 0.08;
   const total = subtotal + shipping + tax;
@@ -15,7 +17,7 @@ export default function CartPage() {
       <SectionTitle
         eyebrow="Cart"
         title="Review the pieces before production"
-        description="Persistent cart storage keeps custom designs, print previews, variants, and pricing intact between sessions."
+        description="One last look before checkout."
       />
 
       <div className="mt-10 grid gap-8 lg:grid-cols-[1fr_360px]">
@@ -33,18 +35,38 @@ export default function CartPage() {
                       </p>
                       <p className="mt-2 text-sm text-black/50">{item.customization.prompt}</p>
                     </div>
-                    <button type="button" onClick={() => removeItem(item.id)} className="text-black/45 transition hover:text-crimson">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        removeItem(item.id);
+                        toast.info({ title: 'Removed', description: item.name });
+                      }}
+                      className="text-black/45 transition hover:text-crimson"
+                    >
                       <Trash2 size={18} />
                     </button>
                   </div>
                   <div className="mt-4 flex items-center justify-between">
-                    <input
-                      type="number"
-                      min="1"
-                      value={item.quantity}
-                      onChange={(event) => updateQuantity(item.id, Number(event.target.value))}
-                      className="w-20 rounded-2xl border border-black/10 bg-paper px-3 py-2"
-                    />
+                    <div className="flex items-center gap-2 rounded-full border border-black/10 bg-paper px-3 py-2">
+                      <button
+                        type="button"
+                        onClick={() => updateQuantity(item.id, item.quantity - 1)}
+                        disabled={item.quantity <= 1}
+                        className="rounded-full border border-black/10 bg-white/70 p-2 text-black/60 transition hover:text-ink disabled:opacity-40"
+                        aria-label="Decrease quantity"
+                      >
+                        <Minus size={14} />
+                      </button>
+                      <span className="min-w-8 text-center text-sm font-bold">{item.quantity}</span>
+                      <button
+                        type="button"
+                        onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                        className="rounded-full border border-black/10 bg-white/70 p-2 text-black/60 transition hover:text-ink"
+                        aria-label="Increase quantity"
+                      >
+                        <Plus size={14} />
+                      </button>
+                    </div>
                     <p className="text-lg font-bold">{currency(item.unitPrice * item.quantity)}</p>
                   </div>
                 </div>
@@ -82,7 +104,11 @@ export default function CartPage() {
           </div>
           <Link
             to="/checkout"
-            className="mt-6 block rounded-full bg-electric px-5 py-4 text-center text-sm font-bold uppercase tracking-[0.2em] text-white"
+            className="mt-6 block rounded-full bg-accent-gradient px-5 py-4 text-center text-sm font-bold uppercase tracking-[0.2em] text-white shadow-glow transition hover:-translate-y-0.5 active:scale-[0.99]"
+            onClick={() => {
+              if (!items.length) return;
+              toast.info({ title: 'Checkout', description: 'Confirm shipping details and place the order.' });
+            }}
           >
             Proceed to Checkout
           </Link>

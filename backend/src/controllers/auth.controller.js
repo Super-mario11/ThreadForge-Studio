@@ -75,7 +75,7 @@ export const login = async (req, res) => {
 };
 
 export const me = async (req, res) => {
-  res.json({ user: req.user });
+  res.json({ user: req.user || null });
 };
 
 export const logout = async (_req, res) => {

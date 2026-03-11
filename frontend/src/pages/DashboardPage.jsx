@@ -17,7 +17,7 @@ export default function DashboardPage() {
         <SectionTitle
           eyebrow="Dashboard"
           title={user ? `Welcome back, ${user.name}` : 'Loading account'}
-          description="View order history, revisit saved designs, and jump back into the studio from one place."
+          description="Saved designs and orders."
         />
         {user ? (
           <button type="button" onClick={logout} className="rounded-full border border-black/10 px-5 py-3 text-sm font-bold uppercase tracking-[0.2em]">

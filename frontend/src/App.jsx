@@ -2,6 +2,7 @@ import { Suspense, lazy } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { Route, Routes, useLocation } from 'react-router-dom';
 import Shell from './components/Shell.jsx';
+import PageLoader from './components/PageLoader.jsx';
 
 const HomePage = lazy(() => import('./pages/HomePage.jsx'));
 const ShopPage = lazy(() => import('./pages/ShopPage.jsx'));
@@ -17,7 +18,7 @@ export default function App() {
 
   return (
     <Shell>
-      <Suspense fallback={<div className="mx-auto max-w-7xl px-4 py-20 text-sm font-bold uppercase tracking-[0.3em] text-black/40">Loading studio...</div>}>
+      <Suspense fallback={<PageLoader label="Loading studio…" />}>
         <AnimatePresence mode="wait">
           <Routes location={location} key={location.pathname}>
             <Route path="/" element={<HomePage />} />

@@ -1,15 +1,13 @@
 import OpenAI from 'openai';
 import { createError } from '../utils/create-error.js';
 
-const client = process.env.OPENAI_API_KEY
-  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-  : null;
-
 export const generateImagesFromPrompt = async ({ prompt, size = '1024x1024' }) => {
-  if (!client) {
-    throw createError(500, 'OPENAI_API_KEY is not configured');
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  if (!apiKey) {
+    throw createError(500, 'OpenAI is not configured (set OPENAI_API_KEY)');
   }
 
+  const client = new OpenAI({ apiKey });
   const response = await client.images.generate({
     model: 'gpt-image-1',
     prompt,

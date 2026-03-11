@@ -11,10 +11,58 @@
 body {
   @apply bg-paper bg-mesh text-ink font-body antialiased;
   min-height: 100vh;
+  scroll-behavior: smooth;
 }
 
 #root {
   min-height: 100vh;
+}
+
+@layer base {
+  *:focus-visible {
+    @apply outline-none ring-2 ring-electric/70 ring-offset-4 ring-offset-paper;
+  }
+
+  ::selection {
+    background: rgba(124, 58, 237, 0.22);
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-[2rem] border border-ink/10 bg-white/70 shadow-lg shadow-ink/5 backdrop-blur;
+  }
+
+  .card-strong {
+    @apply rounded-[2rem] border border-ink/10 bg-white/85 shadow-2xl shadow-ink/10 backdrop-blur;
+  }
+
+  .btn-primary {
+    @apply rounded-full bg-accent-gradient px-7 py-4 text-sm font-bold uppercase tracking-[0.25em] text-white shadow-glow transition hover:-translate-y-1 hover:shadow-2xl hover:shadow-electric/20 active:scale-[0.99];
+  }
+
+  .btn-secondary {
+    @apply rounded-full border border-ink/10 bg-white/70 px-7 py-4 text-sm font-bold uppercase tracking-[0.25em] text-ink transition hover:-translate-y-1 active:scale-[0.99];
+  }
+
+  .btn-outline {
+    @apply rounded-full border border-ink/10 bg-white/75 px-5 py-3 text-sm font-bold uppercase tracking-[0.2em] text-ink transition hover:-translate-y-0.5 active:scale-[0.99];
+  }
+}
+
+.skeleton {
+  background: linear-gradient(110deg, rgba(8, 8, 8, 0.04) 25%, rgba(8, 8, 8, 0.08) 35%, rgba(8, 8, 8, 0.04) 55%);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 0% 0%;
+  }
+  100% {
+    background-position: -200% 0%;
+  }
 }
 
 .studio-grid {

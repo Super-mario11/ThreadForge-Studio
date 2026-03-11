@@ -4,21 +4,23 @@ export default {
   theme: {
     extend: {
       colors: {
-        ink: '#080808',
-        paper: '#f8f4ee',
-        electric: '#265DFF',
-        crimson: '#E74646'
+        ink: '#0B1020',
+        paper: '#F7F8FF',
+        electric: '#7C3AED',
+        crimson: '#EC4899'
       },
       fontFamily: {
         display: ['"Space Grotesk"', 'sans-serif'],
         body: ['"Manrope"', 'sans-serif']
       },
       boxShadow: {
-        glow: '0 20px 80px rgba(38, 93, 255, 0.18)'
+        glow: '0 22px 90px rgba(124, 58, 237, 0.20)'
       },
       backgroundImage: {
         mesh:
-          'radial-gradient(circle at top left, rgba(38,93,255,0.18), transparent 35%), radial-gradient(circle at bottom right, rgba(231,70,70,0.14), transparent 35%)'
+          'radial-gradient(circle at 12% 12%, rgba(124,58,237,0.26), transparent 42%), radial-gradient(circle at 88% 24%, rgba(236,72,153,0.20), transparent 42%), radial-gradient(circle at 30% 85%, rgba(99,102,241,0.14), transparent 40%)',
+        'accent-gradient':
+          'linear-gradient(135deg, rgba(124,58,237,0.95), rgba(236,72,153,0.92))'
       }
     }
   },

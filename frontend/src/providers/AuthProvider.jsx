@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { api } from '../lib/api.js';
+import { api, setAuthToken } from '../lib/api.js';
 
 const AuthContext = createContext(null);
 
@@ -20,14 +20,22 @@ export function AuthProvider({ children }) {
       method: 'POST',
       body: JSON.stringify(payload)
     });
+    if (data.token) {
+      setAuthToken(data.token);
+    }
     setUser(data.user);
     return data.user;
   };
 
   const logout = async () => {
-    await api('/auth/logout', {
-      method: 'POST'
-    });
+    setAuthToken('');
+    try {
+      await api('/auth/logout', {
+        method: 'POST'
+      });
+    } catch {
+      // Ignore logout network failures.
+    }
     setUser(null);
   };
 

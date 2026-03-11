@@ -4,17 +4,21 @@ import { Sparkles, Shirt, Truck, Wand2 } from 'lucide-react';
 import SectionTitle from '../components/SectionTitle.jsx';
 import TshirtPreview from '../components/TshirtPreview.jsx';
 import ProductCard from '../components/ProductCard.jsx';
+import ProductCardSkeleton from '../components/ProductCardSkeleton.jsx';
+import ProductQuickView from '../components/ProductQuickView.jsx';
 import { testimonials } from '../data/prompts.js';
 import { useFeaturedProducts } from '../queries/useProducts.js';
+import { useState } from 'react';
 
 const features = [
-  { icon: Wand2, title: 'AI Design Generator', text: 'Turn prompts into print-ready artwork in seconds.' },
-  { icon: Shirt, title: 'High Quality Print', text: 'Premium garments with sharp, color-accurate output.' },
-  { icon: Truck, title: 'Fast Delivery', text: 'Production-ready order flow with shipping updates and email confirmations.' }
+  { icon: Wand2, title: 'AI Generator', text: 'Prompt → artwork in seconds.' },
+  { icon: Shirt, title: 'Premium Blanks', text: 'Clean fit. Crisp prints.' },
+  { icon: Truck, title: 'Quick Shipping', text: 'Trackable delivery.' }
 ];
 
 export default function HomePage() {
-  const { products } = useFeaturedProducts();
+  const [quickView, setQuickView] = useState(null);
+  const { products, loading } = useFeaturedProducts();
 
   return (
     <div className="pb-20">
@@ -31,20 +35,17 @@ export default function HomePage() {
           <h1 className="max-w-2xl font-display text-5xl font-bold tracking-tight sm:text-7xl">
             Design. Print. Wear.
           </h1>
-          <p className="mt-6 max-w-xl text-lg text-black/68 sm:text-xl">
-            ThreadForge blends a custom merch lab with a modern fashion storefront so shoppers can generate, refine,
-            and order original apparel without friction.
-          </p>
+          <p className="mt-6 max-w-xl text-lg text-ink/70 sm:text-xl">Create a custom tee in minutes.</p>
           <div className="mt-10 flex flex-wrap gap-4">
             <Link
               to="/studio"
-              className="rounded-full bg-ink px-7 py-4 text-sm font-bold uppercase tracking-[0.25em] text-paper shadow-glow transition hover:-translate-y-1"
+              className="btn-primary"
             >
               Start Designing
             </Link>
             <Link
               to="/shop"
-              className="rounded-full border border-black/10 bg-white/80 px-7 py-4 text-sm font-bold uppercase tracking-[0.25em] transition hover:-translate-y-1"
+              className="btn-secondary"
             >
               Explore Collection
             </Link>
@@ -75,21 +76,23 @@ export default function HomePage() {
       <section className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
         <SectionTitle
           eyebrow="Featured"
-          title="Build the collection around customization"
-          description="Premium bases selected for oversized graphics, minimal chest logos, and vivid all-over storytelling."
+          title="Pick a blank, then customize"
+          description="Fast picks for quick demos."
         />
         <div className="mt-10 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-          {products.map((product) => (
-            <ProductCard key={product.slug} product={product} />
-          ))}
+          {loading
+            ? Array.from({ length: 3 }).map((_, index) => <ProductCardSkeleton key={index} />)
+            : products.map((product) => (
+                <ProductCard key={product.slug} product={product} onQuickView={setQuickView} />
+              ))}
         </div>
       </section>
 
       <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
         <SectionTitle
           eyebrow="Proof"
-          title="Loved by creators, teams, and fashion-first brands"
-          description="The experience is intentionally simple: create the artwork, place it precisely, then order with confidence."
+          title="Simple, smooth, and fun"
+          description="From prompt to checkout with fewer steps."
           align="center"
         />
         <div className="mt-10 grid gap-6 lg:grid-cols-3">
@@ -112,7 +115,7 @@ export default function HomePage() {
       <footer className="mx-auto mt-16 max-w-7xl border-t border-black/8 px-4 py-10 text-sm text-black/55 sm:px-6 lg:px-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <p>© 2026 ThreadForge Studio</p>
-          <div className="flex gap-5">
+          <div className="flex flex-wrap gap-5">
             <a href="#social">Instagram</a>
             <a href="#social">TikTok</a>
             <a href="#contact">Contact</a>
@@ -120,6 +123,12 @@ export default function HomePage() {
           </div>
         </div>
       </footer>
+
+      <ProductQuickView
+        product={quickView}
+        open={Boolean(quickView)}
+        onClose={() => setQuickView(null)}
+      />
     </div>
   );
 }

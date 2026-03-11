@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { FlipHorizontal, ImagePlus, RotateCw, Save, Wand2 } from 'lucide-react';
 import SectionTitle from '../components/SectionTitle.jsx';
 import StudioCanvas from '../components/StudioCanvas.jsx';
@@ -8,29 +8,64 @@ import { trendingPrompts } from '../data/prompts.js';
 import { api, API_URL } from '../lib/api.js';
 import { useCart } from '../providers/CartProvider.jsx';
 import { useAuth } from '../providers/AuthProvider.jsx';
+import { useToast } from '../providers/ToastProvider.jsx';
 
-const colors = [
+const fallbackColors = [
   { label: 'White', value: '#ffffff' },
   { label: 'Black', value: '#111111' },
   { label: 'Electric', value: '#265DFF' },
   { label: 'Crimson', value: '#E74646' }
 ];
 
+const namedColorHex = {
+  Black: '#111111',
+  White: '#ffffff',
+  'Off White': '#f4f1ea',
+  Cobalt: '#265DFF',
+  Crimson: '#E74646',
+  Charcoal: '#2b2b2b',
+  Stone: '#d3cec7',
+  Forest: '#1b3b2a',
+  Navy: '#0b1f3b',
+  Graphite: '#4b4b4b'
+};
+
+function toSwatches(colorNames) {
+  const names = colorNames?.length ? colorNames : fallbackColors.map((entry) => entry.label);
+  return names.map((name) => {
+    const fallback = fallbackColors.find((entry) => entry.label === name);
+    return {
+      label: name,
+      value: namedColorHex[name] || fallback?.value || '#ffffff'
+    };
+  });
+}
+
 export default function StudioPage() {
+  const location = useLocation();
+  const toast = useToast();
   const { user, setUser } = useAuth();
   const { addItem } = useCart();
+  const [product, setProduct] = useState(() => location.state?.product || null);
+  const [preset, setPreset] = useState(() => location.state?.preset || null);
   const [prompt, setPrompt] = useState(trendingPrompts[0]);
   const [generatedImages, setGeneratedImages] = useState([]);
   const [selectedArtwork, setSelectedArtwork] = useState('');
   const [activeSide, setActiveSide] = useState('front');
-  const [tshirtColor, setTshirtColor] = useState(colors[0].value);
+  const [selectedSize, setSelectedSize] = useState('M');
+  const [tshirtColor, setTshirtColor] = useState(fallbackColors[0].value);
+  const [tshirtColorName, setTshirtColorName] = useState(fallbackColors[0].label);
   const [transform, setTransform] = useState({
+    x: 180,
+    y: 180,
     scale: 0.55,
     rotation: 0,
     opacity: 1,
     flipX: false
   });
   const [textConfig, setTextConfig] = useState({
+    x: 180,
+    y: 380,
     text: '',
     fontFamily: 'Space Grotesk',
     fontSize: 28,
@@ -40,14 +75,64 @@ export default function StudioPage() {
   const [generating, setGenerating] = useState(false);
   const [saveState, setSaveState] = useState('');
 
+  useEffect(() => {
+    setProduct(location.state?.product || null);
+    setPreset(location.state?.preset || null);
+  }, [location.key]);
+
+  const swatches = useMemo(() => toSwatches(product?.colors), [product?.colors]);
+  const availableSizes = useMemo(() => product?.sizes || ['S', 'M', 'L', 'XL'], [product?.sizes]);
+  const basePrice = product?.basePrice ?? 29;
+  const productName = product?.name ?? 'Studio Regular Tee';
+  const productId = product?._id ?? 'fallback-2';
+  const productType = product?.category ?? 'Regular Fit';
+
+  useEffect(() => {
+    const preferredSize =
+      preset?.size && availableSizes.includes(preset.size)
+        ? preset.size
+        : availableSizes.includes('M')
+          ? 'M'
+          : availableSizes[0] || 'M';
+    setSelectedSize(preferredSize);
+  }, [availableSizes, preset?.size]);
+
+  useEffect(() => {
+    const preferredSwatch = preset?.color ? swatches.find((swatch) => swatch.label === preset.color) : null;
+    const nextSwatch = preferredSwatch || swatches[0] || fallbackColors[0];
+    setTshirtColor(nextSwatch.value);
+    setTshirtColorName(nextSwatch.label);
+  }, [preset?.color, swatches]);
+
   const livePrice = useMemo(() => {
     const printAreaPrice = Math.round(transform.scale * 12);
-    return 29 + printAreaPrice;
-  }, [transform.scale]);
+    return basePrice + printAreaPrice;
+  }, [basePrice, transform.scale]);
+
+  const resetTransform = () => {
+    setTransform({
+      x: 180,
+      y: 180,
+      scale: 0.55,
+      rotation: 0,
+      opacity: 1,
+      flipX: false
+    });
+  };
+
+  const resetTextPlacement = () => {
+    setTextConfig((current) => ({
+      ...current,
+      x: 180,
+      y: 380
+    }));
+  };
 
   const handleGenerate = async () => {
     if (!user) {
-      setSaveState('Sign in to use the AI generator.');
+      const message = 'Sign in to use the AI generator.';
+      setSaveState(message);
+      toast.info({ title: 'Sign in required', description: 'Log in to generate AI designs.' });
       return;
     }
 
@@ -63,6 +148,7 @@ export default function StudioPage() {
       setSelectedArtwork(data.images[0] || '');
     } catch (error) {
       setSaveState(error.message);
+      toast.error({ title: 'Generation failed', description: error.message });
     } finally {
       setGenerating(false);
     }
@@ -72,7 +158,9 @@ export default function StudioPage() {
     const file = event.target.files?.[0];
     if (!file) return;
     if (!user) {
-      setSaveState('Sign in to upload artwork.');
+      const message = 'Sign in to upload artwork.';
+      setSaveState(message);
+      toast.info({ title: 'Sign in required', description: 'Log in to upload custom artwork.' });
       return;
     }
 
@@ -93,8 +181,10 @@ export default function StudioPage() {
         throw new Error(data.message || 'Upload failed');
       }
       setSelectedArtwork(data.imageUrl);
+      toast.success({ title: 'Upload complete', description: 'Artwork is ready on the canvas.' });
     } catch (error) {
       setSaveState(error.message);
+      toast.error({ title: 'Upload failed', description: error.message });
     } finally {
       setUploading(false);
     }
@@ -102,7 +192,9 @@ export default function StudioPage() {
 
   const handleSaveDesign = async () => {
     if (!user || !selectedArtwork) {
-      setSaveState('Sign in and choose artwork before saving.');
+      const message = 'Sign in and choose artwork before saving.';
+      setSaveState(message);
+      toast.info({ title: 'Missing info', description: 'Sign in and select artwork to save.' });
       return;
     }
 
@@ -112,8 +204,8 @@ export default function StudioPage() {
         body: JSON.stringify({
           name: prompt || 'Custom Design',
           previewUrl: selectedArtwork,
-          productType: 'Regular Fit',
-          color: tshirtColor,
+          productType,
+          color: tshirtColorName,
           canvasState: {
             front: { selectedArtwork, transform, textConfig },
             back: { selectedArtwork, transform, textConfig }
@@ -122,27 +214,31 @@ export default function StudioPage() {
       });
       setUser((current) => (current ? { ...current, savedDesigns: data.savedDesigns } : current));
       setSaveState('Design saved to your dashboard.');
+      toast.success({ title: 'Design saved', description: 'Find it in your dashboard anytime.' });
     } catch (error) {
       setSaveState(error.message);
+      toast.error({ title: 'Save failed', description: error.message });
     }
   };
 
   const handleAddToCart = () => {
     if (!selectedArtwork) {
-      setSaveState('Select or upload artwork before adding to cart.');
+      const message = 'Select or upload artwork before adding to cart.';
+      setSaveState(message);
+      toast.info({ title: 'Select artwork', description: 'Upload or generate a design before checkout.' });
       return;
     }
 
     addItem({
       id: crypto.randomUUID(),
-      productId: 'fallback-2',
-      name: 'Studio Regular Tee',
+      productId,
+      name: productName,
       quantity: 1,
       unitPrice: livePrice,
       previewUrl: selectedArtwork,
       variant: {
-        size: 'M',
-        color: colors.find((entry) => entry.value === tshirtColor)?.label || 'White'
+        size: selectedSize,
+        color: tshirtColorName
       },
       customization: {
         prompt,
@@ -152,6 +248,7 @@ export default function StudioPage() {
       }
     });
     setSaveState('Added to cart.');
+    toast.success({ title: 'Added to cart', description: `${productName} · Size ${selectedSize} · ${tshirtColorName}` });
   };
 
   return (
@@ -159,7 +256,7 @@ export default function StudioPage() {
       <SectionTitle
         eyebrow="AI Studio"
         title="Prompt it. Place it. Print it."
-        description="Generate artwork, upload your own files, and fine-tune placement on a live apparel mockup with minimal friction."
+        description="Generate or upload, then place it."
       />
 
       <div className="mt-10 grid gap-6 xl:grid-cols-[320px_1fr_320px]">
@@ -174,7 +271,7 @@ export default function StudioPage() {
           <button
             type="button"
             onClick={handleGenerate}
-            className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-ink px-5 py-3 font-bold uppercase tracking-[0.2em] text-paper"
+            className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-ink px-5 py-3 font-bold uppercase tracking-[0.2em] text-paper transition hover:-translate-y-0.5 active:scale-[0.99]"
           >
             <Wand2 size={16} />
             {generating ? 'Generating...' : 'Generate Design'}
@@ -194,7 +291,7 @@ export default function StudioPage() {
                   key={item}
                   type="button"
                   onClick={() => setPrompt(item)}
-                  className="rounded-full border border-black/10 bg-paper px-4 py-2 text-left text-sm"
+                  className="rounded-full border border-black/10 bg-paper px-4 py-2 text-left text-sm transition hover:-translate-y-0.5 active:scale-[0.98]"
                 >
                   {item}
                 </button>
@@ -234,7 +331,10 @@ export default function StudioPage() {
                 </button>
               ))}
             </div>
-            <p className="text-sm font-bold uppercase tracking-[0.25em] text-electric">Live Price {livePrice} USD</p>
+            <div className="text-right">
+              <p className="text-xs font-bold uppercase tracking-[0.25em] text-black/45">{productType}</p>
+              <p className="text-sm font-bold uppercase tracking-[0.25em] text-electric">Live Price {livePrice} USD</p>
+            </div>
           </div>
 
           <div className="grid items-center gap-6 xl:grid-cols-[1fr_280px]">
@@ -244,6 +344,8 @@ export default function StudioPage() {
               artwork={selectedArtwork}
               textConfig={textConfig}
               transform={transform}
+              onTransformChange={(next) => setTransform(next)}
+              onTextConfigChange={(next) => setTextConfig((current) => ({ ...current, ...next }))}
             />
             <div className="flex justify-center">
               <TshirtPreview color={tshirtColor} artwork={selectedArtwork} title={`${activeSide} Preview`} size="small" />
@@ -262,7 +364,7 @@ export default function StudioPage() {
             <button
               type="button"
               onClick={handleAddToCart}
-              className="rounded-full bg-electric px-5 py-3 text-sm font-bold uppercase tracking-[0.2em] text-white"
+              className="rounded-full bg-accent-gradient px-5 py-3 text-sm font-bold uppercase tracking-[0.2em] text-white shadow-glow transition hover:-translate-y-0.5 active:scale-[0.99]"
             >
               Add to Cart
             </button>
@@ -274,9 +376,60 @@ export default function StudioPage() {
         </section>
 
         <section className="rounded-[2rem] border border-black/8 bg-white/80 p-6 backdrop-blur">
-          <p className="text-sm font-bold uppercase tracking-[0.25em] text-black/45">Editing Tools</p>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-bold uppercase tracking-[0.25em] text-black/45">Editing Tools</p>
+              <p className="mt-2 font-display text-2xl font-bold">{productName}</p>
+              <p className="mt-2 text-sm text-black/55">Tip: drag, resize, and rotate directly on the canvas.</p>
+            </div>
+            <Link to="/shop" className="mt-1 rounded-full border border-black/10 bg-paper px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] transition hover:-translate-y-0.5">
+              Change
+            </Link>
+          </div>
 
           <div className="mt-6 space-y-5">
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedArtwork('')}
+                className="rounded-full border border-black/10 bg-white px-4 py-2 text-xs font-bold uppercase tracking-[0.2em]"
+              >
+                Remove artwork
+              </button>
+              <button
+                type="button"
+                onClick={resetTransform}
+                className="rounded-full border border-black/10 bg-white px-4 py-2 text-xs font-bold uppercase tracking-[0.2em]"
+              >
+                Reset artwork
+              </button>
+              <button
+                type="button"
+                onClick={resetTextPlacement}
+                className="rounded-full border border-black/10 bg-white px-4 py-2 text-xs font-bold uppercase tracking-[0.2em]"
+              >
+                Center text
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-sm font-semibold">Size</p>
+              <div className="flex flex-wrap gap-2">
+                {availableSizes.map((size) => (
+                  <button
+                    key={size}
+                    type="button"
+                    onClick={() => setSelectedSize(size)}
+                    className={`rounded-full px-4 py-2 text-sm font-semibold transition active:scale-[0.98] ${
+                      selectedSize === size ? 'bg-ink text-paper' : 'border border-black/10 bg-white/90 hover:-translate-y-0.5'
+                    }`}
+                  >
+                    {size}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <label className="block">
               <span className="mb-2 flex items-center gap-2 text-sm font-semibold"><RotateCw size={16} /> Rotate</span>
               <input
@@ -327,11 +480,14 @@ export default function StudioPage() {
             <div>
               <p className="mb-3 text-sm font-semibold">T-shirt Color</p>
               <div className="flex gap-3">
-                {colors.map((color) => (
+                {swatches.map((color) => (
                   <button
                     key={color.label}
                     type="button"
-                    onClick={() => setTshirtColor(color.value)}
+                    onClick={() => {
+                      setTshirtColor(color.value);
+                      setTshirtColorName(color.label);
+                    }}
                     className={`h-10 w-10 rounded-full border-2 ${
                       tshirtColor === color.value ? 'border-electric' : 'border-black/10'
                     }`}

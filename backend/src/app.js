@@ -3,7 +3,6 @@ import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import dotenv from 'dotenv';
 import authRoutes from './routes/auth.routes.js';
 import productRoutes from './routes/product.routes.js';
 import designRoutes from './routes/design.routes.js';
@@ -12,8 +11,6 @@ import uploadRoutes from './routes/upload.routes.js';
 import aiRoutes from './routes/ai.routes.js';
 import { notFoundMiddleware } from './middleware/not-found.js';
 import { errorMiddleware } from './middleware/error.js';
-
-dotenv.config();
 
 const app = express();
 
