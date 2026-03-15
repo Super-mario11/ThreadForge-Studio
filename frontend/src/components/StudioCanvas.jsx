@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { Canvas, FabricImage, IText } from 'fabric';
+import { Canvas, FabricImage, IText, Path } from 'fabric';
 
 const BASE_CANVAS_WIDTH = 360;
 const BASE_CANVAS_HEIGHT = 480;
 const MIN_CANVAS_WIDTH = 240;
+const EDIT_SCALE_MIN = 0.2;
+const EDIT_SCALE_MAX = 1.8;
+const EDIT_ROTATION_STEP = 0.2;
+const SHIRT_OUTLINE =
+  'M95 70 L122 56 L150 72 L210 72 L238 56 L265 70 L302 120 L276 140 L260 108 L244 456 L116 456 L100 108 L84 140 L58 120 Z';
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
@@ -20,6 +25,7 @@ export default function StudioCanvas({
   const containerRef = useRef(null);
   const canvasElementRef = useRef(null);
   const fabricCanvasRef = useRef(null);
+  const tshirtTemplateRef = useRef(null);
   const artworkRequestRef = useRef(0);
   const onTransformChangeRef = useRef(onTransformChange);
   const onTextConfigChangeRef = useRef(onTextConfigChange);
@@ -68,9 +74,23 @@ export default function StudioCanvas({
     const canvas = new Canvas(canvasElementRef.current, {
       width: BASE_CANVAS_WIDTH,
       height: BASE_CANVAS_HEIGHT,
-      backgroundColor: '#f7f3ee',
+      backgroundColor: '#f7f3ee00',
       selection: true
     });
+
+    const tshirtTemplate = new Path(SHIRT_OUTLINE, {
+      left: 0,
+      top: 0,
+      fill: tshirtColor,
+      stroke: 'rgba(0, 0, 0, 0.14)',
+      strokeWidth: 2,
+      selectable: false,
+      evented: false,
+      hoverCursor: 'default'
+    });
+    tshirtTemplate.data = { role: 'template' };
+    tshirtTemplateRef.current = tshirtTemplate;
+    canvas.add(tshirtTemplate);
 
     fabricCanvasRef.current = canvas;
     onCanvasChange?.(canvas);
@@ -122,11 +142,36 @@ export default function StudioCanvas({
       syncText(target);
     };
 
+    const handleMouseWheel = (event) => {
+      const wheel = event?.e;
+      if (!wheel) return;
+      const target = event?.target || canvas.getActiveObject();
+      if (!target || target?.data?.role === 'template') return;
+
+      wheel.preventDefault();
+      wheel.stopPropagation();
+
+      if (wheel.shiftKey) {
+        const nextRotation = (target.angle || 0) - wheel.deltaY * EDIT_ROTATION_STEP;
+        target.rotate(nextRotation);
+      } else {
+        const currentScale = typeof target.scaleX === 'number' ? target.scaleX : normalizedTransformRef.current?.scale || 0.55;
+        const nextScale = clamp(currentScale - wheel.deltaY * 0.0015, EDIT_SCALE_MIN, EDIT_SCALE_MAX);
+        target.set({ scaleX: nextScale, scaleY: nextScale });
+      }
+
+      target.setCoords();
+      syncArtwork(target);
+      syncText(target);
+      canvas.requestRenderAll();
+    };
+
     canvas.on('object:modified', handleModified);
     canvas.on('object:moving', handleModified);
     canvas.on('object:scaling', handleModified);
     canvas.on('object:rotating', handleModified);
     canvas.on('text:changed', handleTextChanged);
+    canvas.on('mouse:wheel', handleMouseWheel);
 
     const resize = () => {
       const container = containerRef.current;
@@ -155,8 +200,10 @@ export default function StudioCanvas({
       canvas.off('object:scaling', handleModified);
       canvas.off('object:rotating', handleModified);
       canvas.off('text:changed', handleTextChanged);
+      canvas.off('mouse:wheel', handleMouseWheel);
       canvas.dispose();
       fabricCanvasRef.current = null;
+      tshirtTemplateRef.current = null;
     };
   }, [onCanvasChange]);
 
@@ -164,7 +211,10 @@ export default function StudioCanvas({
     const canvas = fabricCanvasRef.current;
     if (!canvas) return;
 
-    canvas.backgroundColor = tshirtColor;
+    const tshirtTemplate = tshirtTemplateRef.current;
+    if (tshirtTemplate) {
+      tshirtTemplate.set('fill', tshirtColor);
+    }
     canvas.renderAll();
   }, [tshirtColor]);
 

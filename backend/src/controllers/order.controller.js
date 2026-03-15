@@ -66,7 +66,7 @@ export const createCheckoutSession = async (req, res) => {
   }
 
   const paymentIntent = await stripe.paymentIntents.create({
-    currency: process.env.STRIPE_CURRENCY || 'usd',
+    currency: process.env.STRIPE_CURRENCY || 'inr',
     amount: Math.round(total * 100),
     automatic_payment_methods: {
       enabled: true

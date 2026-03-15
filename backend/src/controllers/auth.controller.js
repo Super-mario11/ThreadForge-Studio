@@ -16,10 +16,22 @@ const loginSchema = z.object({
 
 const attachSession = (res, user) => {
   const token = signToken({ userId: user._id });
+  const sameSiteRaw = (process.env.COOKIE_SAMESITE || '').trim().toLowerCase();
+  const sameSite =
+    sameSiteRaw === 'none' || sameSiteRaw === 'lax' || sameSiteRaw === 'strict'
+      ? sameSiteRaw
+      : process.env.NODE_ENV === 'production'
+        ? 'none'
+        : 'lax';
+  const secure =
+    process.env.COOKIE_SECURE != null
+      ? process.env.COOKIE_SECURE === 'true'
+      : process.env.NODE_ENV === 'production' || sameSite === 'none';
+
   res.cookie('token', token, {
     httpOnly: true,
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    sameSite,
+    secure,
     maxAge: 7 * 24 * 60 * 60 * 1000
   });
 

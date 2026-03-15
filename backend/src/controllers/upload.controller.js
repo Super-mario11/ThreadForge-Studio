@@ -6,6 +6,6 @@ export const uploadImage = async (req, res) => {
     throw createError(400, 'Image file is required');
   }
 
-  const imageUrl = await uploadImageBuffer(req.file.buffer, 'threadforge/user-uploads');
+  const imageUrl = await uploadImageBuffer(req.file.buffer);
   res.status(201).json({ imageUrl });
 };

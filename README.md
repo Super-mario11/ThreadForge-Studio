@@ -6,7 +6,7 @@ ThreadForge Studio is a full-stack custom apparel platform where shoppers can ge
 
 - Frontend: React, Vite, Tailwind CSS, Framer Motion, React Router, Fabric.js
 - Backend: Node.js, Express, MongoDB, Mongoose, JWT
-- Integrations: OpenAI image generation, Cloudinary uploads, Stripe checkout, Resend email
+- Integrations: Hugging Face image generation, Cloudinary uploads, Stripe checkout, Resend email
 
 ## Apps
 
@@ -33,8 +33,8 @@ ThreadForge Studio is a full-stack custom apparel platform where shoppers can ge
 
 - Configure Stripe webhook signing secret on the backend
 - Provide Cloudinary credentials for image storage
-- Provide OpenAI key for prompt-based image generation
-- Set CORS origins to your deployed frontend host
+- Provide Hugging Face API token for prompt-based image generation
+- Set backend `CLIENT_URL` to your deployed frontend origin (comma-separated allowed origins supported)
 - If using MongoDB Atlas, ensure Atlas Network Access allows your host (Render often requires temporarily allowing `0.0.0.0/0`), and set `MONGODB_URI` in your hosting provider’s environment variables
 - Build frontend with `npm run build --workspace frontend`
 - Start backend with `npm run start --workspace backend`

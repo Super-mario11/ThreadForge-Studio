@@ -1,5 +1,6 @@
 import { Navigate } from 'react-router-dom';
 import SectionTitle from '../components/SectionTitle.jsx';
+import { currency } from '../lib/format.js';
 import { useAuth } from '../providers/AuthProvider.jsx';
 import { useOrders } from '../queries/useOrders.js';
 
@@ -54,7 +55,7 @@ export default function DashboardPage() {
                     <p className="font-bold">#{order._id.slice(-6)}</p>
                     <p className="text-sm uppercase tracking-[0.2em] text-paper/60">{order.status}</p>
                   </div>
-                  <p className="mt-2 text-sm text-paper/70">{order.items.length} items · ${order.amountTotal}</p>
+                  <p className="mt-2 text-sm text-paper/70">{order.items.length} items · {currency(order.amountTotal)}</p>
                 </article>
               ))
             ) : (

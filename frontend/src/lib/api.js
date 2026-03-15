@@ -1,4 +1,14 @@
-export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const configuredApiUrl = import.meta.env.VITE_API_URL;
+const fallbackApiUrl = import.meta.env.PROD ? '' : 'http://localhost:5000/api';
+
+export const API_URL = configuredApiUrl || fallbackApiUrl;
+
+if (import.meta.env.PROD && !configuredApiUrl) {
+  // Fail fast in production so a misconfigured deployment doesn't silently call localhost.
+  throw new Error(
+    'VITE_API_URL is required in production (set it in your Vercel Environment Variables).'
+  );
+}
 
 export const AUTH_TOKEN_STORAGE_KEY = 'threadforge_auth_token';
 
@@ -44,11 +54,14 @@ function extractErrorMessage(body, fallback) {
 export async function api(path, options = {}) {
   const authToken = getAuthToken();
   const hasAuthorizationHeader = Boolean(options.headers && Object.prototype.hasOwnProperty.call(options.headers, 'Authorization'));
+  const isFormDataBody =
+    typeof FormData !== 'undefined' && options.body && options.body instanceof FormData;
+  const shouldSetJsonContentType = !isFormDataBody;
 
   const response = await fetch(`${API_URL}${path}`, {
     credentials: 'include',
     headers: {
-      'Content-Type': 'application/json',
+      ...(shouldSetJsonContentType ? { 'Content-Type': 'application/json' } : {}),
       ...(authToken && !hasAuthorizationHeader ? { Authorization: `Bearer ${authToken}` } : {}),
       ...(options.headers || {})
     },

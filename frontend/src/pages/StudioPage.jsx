@@ -5,7 +5,7 @@ import SectionTitle from '../components/SectionTitle.jsx';
 import StudioCanvas from '../components/StudioCanvas.jsx';
 import TshirtPreview from '../components/TshirtPreview.jsx';
 import { trendingPrompts } from '../data/prompts.js';
-import { api, API_URL } from '../lib/api.js';
+import { api } from '../lib/api.js';
 import { useCart } from '../providers/CartProvider.jsx';
 import { useAuth } from '../providers/AuthProvider.jsx';
 import { useToast } from '../providers/ToastProvider.jsx';
@@ -171,15 +171,10 @@ export default function StudioPage() {
     formData.append('image', file);
 
     try {
-      const response = await fetch(`${API_URL}/uploads`, {
+      const data = await api('/uploads', {
         method: 'POST',
-        credentials: 'include',
         body: formData
       });
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.message || 'Upload failed');
-      }
       setSelectedArtwork(data.imageUrl);
       toast.success({ title: 'Upload complete', description: 'Artwork is ready on the canvas.' });
     } catch (error) {
@@ -380,7 +375,9 @@ export default function StudioPage() {
             <div>
               <p className="text-sm font-bold uppercase tracking-[0.25em] text-black/45">Editing Tools</p>
               <p className="mt-2 font-display text-2xl font-bold">{productName}</p>
-              <p className="mt-2 text-sm text-black/55">Tip: drag, resize, and rotate directly on the canvas.</p>
+              <p className="mt-2 text-sm text-black/55">
+                Tip: drag to move. Use mouse wheel to zoom selected artwork/text. Hold Shift + wheel to rotate.
+              </p>
             </div>
             <Link to="/shop" className="mt-1 rounded-full border border-black/10 bg-paper px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] transition hover:-translate-y-0.5">
               Change
@@ -447,7 +444,7 @@ export default function StudioPage() {
               <input
                 type="range"
                 min="0.2"
-                max="1.2"
+                max="1.8"
                 step="0.05"
                 value={transform.scale}
                 onChange={(event) => setTransform((current) => ({ ...current, scale: Number(event.target.value) }))}

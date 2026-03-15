@@ -1,5 +1,5 @@
 import GeneratedAsset from '../models/GeneratedAsset.js';
-import { generateImagesFromPrompt } from '../services/openai.service.js';
+import { generateImagesFromPrompt } from '../services/huggingface.service.js';
 import { createError } from '../utils/create-error.js';
 
 export const generateDesign = async (req, res) => {

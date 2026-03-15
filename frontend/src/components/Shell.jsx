@@ -3,6 +3,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { Menu, ShoppingBag, Sparkles, User, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useCart } from '../providers/CartProvider.jsx';
+import { useAuth } from '../providers/AuthProvider.jsx';
 
 const navigation = [
   { to: '/', label: 'Home' },
@@ -15,9 +16,11 @@ export default function Shell({ children }) {
   const location = useLocation();
   const shouldReduceMotion = useReducedMotion();
   const { items } = useCart();
+  const { user } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
 
   const cartCount = items.length;
+  const accountPath = user ? '/dashboard' : '/auth';
 
   const mobileNav = navigation;
 
@@ -71,7 +74,7 @@ export default function Shell({ children }) {
             >
               <Menu size={18} />
             </button>
-            <Link to="/auth" className="rounded-full border border-ink/12 p-3 transition hover:-translate-y-0.5">
+            <Link to={accountPath} className="rounded-full border border-ink/12 p-3 transition hover:-translate-y-0.5">
               <User size={18} />
             </Link>
             <Link to="/cart" className="relative rounded-full bg-ink p-3 text-paper shadow-glow">
@@ -142,7 +145,7 @@ export default function Shell({ children }) {
 
                 <div className="mt-5 grid grid-cols-2 gap-3">
                   <Link
-                    to="/auth"
+                    to={accountPath}
                     className="rounded-[1.5rem] border border-black/10 bg-white/80 px-5 py-4 text-center text-sm font-bold uppercase tracking-[0.2em] transition hover:-translate-y-0.5"
                   >
                     Account

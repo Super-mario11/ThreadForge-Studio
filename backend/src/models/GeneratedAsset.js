@@ -5,7 +5,7 @@ const generatedAssetSchema = new mongoose.Schema(
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     prompt: { type: String, required: true },
     images: [{ type: String, required: true }],
-    provider: { type: String, default: 'openai' }
+    provider: { type: String, default: 'huggingface' }
   },
   { timestamps: true }
 );
