@@ -6,6 +6,6 @@ export const uploadImage = async (req, res) => {
     throw createError(400, 'Image file is required');
   }
 
-  const imageUrl = await uploadImageBuffer(req.file.buffer);
+  const imageUrl = await uploadImageBuffer(req.file.buffer, undefined, req.file.mimetype);
   res.status(201).json({ imageUrl });
 };

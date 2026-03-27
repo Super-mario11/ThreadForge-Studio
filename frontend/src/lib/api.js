@@ -1,7 +1,32 @@
 const configuredApiUrl = import.meta.env.VITE_API_URL;
 const fallbackApiUrl = import.meta.env.PROD ? '' : 'http://localhost:5000/api';
 
-export const API_URL = configuredApiUrl || fallbackApiUrl;
+function normalizeApiUrl(value) {
+  if (!value) return value;
+
+  const trimmed = value.trim().replace(/\/+$/, '');
+  if (!trimmed) return trimmed;
+
+  if (trimmed.endsWith('/api')) {
+    return trimmed;
+  }
+
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    try {
+      const url = new URL(trimmed);
+      const pathname = url.pathname.replace(/\/+$/, '');
+      if (!pathname || pathname === '/') {
+        return `${trimmed}/api`;
+      }
+    } catch {
+      // Fall through to return original value for non-standard URL values.
+    }
+  }
+
+  return trimmed;
+}
+
+export const API_URL = normalizeApiUrl(configuredApiUrl) || fallbackApiUrl;
 
 if (import.meta.env.PROD && !configuredApiUrl) {
   // Fail fast in production so a misconfigured deployment doesn't silently call localhost.
