@@ -2,13 +2,20 @@ version: '3.9'
 services:
   mongo:
     image: mongo:7
+    container_name: threadforge-mongo
     restart: unless-stopped
     ports:
       - '27017:27017'
     volumes:
       - mongo-data:/data/db
+    healthcheck:
+      test: ['CMD-SHELL', 'mongosh --quiet --eval "db.adminCommand(''ping'').ok" | grep 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   backend:
+    container_name: threadforge-backend
     build:
       context: ./backend
     env_file:
@@ -16,15 +23,31 @@ services:
     ports:
       - '5000:5000'
     depends_on:
-      - mongo
+      mongo:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:5000/api/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
 
   frontend:
+    container_name: threadforge-frontend
     build:
       context: ./frontend
+      args:
+        VITE_API_URL: http://localhost:5000/api
     ports:
-      - '4173:4173'
+      - '4173:80'
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
 volumes:
   mongo-data:

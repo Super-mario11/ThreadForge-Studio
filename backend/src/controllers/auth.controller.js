@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { OAuth2Client } from 'google-auth-library';
 import User from '../models/User.js';
 import { createError } from '../utils/create-error.js';
 import { signToken } from '../utils/jwt.js';
@@ -13,6 +14,25 @@ const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8)
 });
+
+const googleSchema = z.object({
+  credential: z.string().min(10)
+});
+
+let googleClient = null;
+
+const getGoogleClient = () => {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  if (!clientId) {
+    throw createError(500, 'Google auth is not configured on the server');
+  }
+
+  if (!googleClient) {
+    googleClient = new OAuth2Client(clientId);
+  }
+
+  return { client: googleClient, clientId };
+};
 
 const attachSession = (res, user) => {
   const token = signToken({ userId: user._id });
@@ -88,6 +108,55 @@ export const login = async (req, res) => {
 
 export const me = async (req, res) => {
   res.json({ user: req.user || null });
+};
+
+export const googleAuth = async (req, res) => {
+  const parsed = googleSchema.safeParse(req.body);
+  if (!parsed.success) {
+    throw createError(400, 'Invalid Google auth payload', parsed.error.flatten());
+  }
+
+  const { client, clientId } = getGoogleClient();
+  const ticket = await client.verifyIdToken({
+    idToken: parsed.data.credential,
+    audience: clientId
+  });
+  const payload = ticket.getPayload();
+
+  if (!payload?.email || payload.email_verified !== true) {
+    throw createError(401, 'Google account email is not verified');
+  }
+
+  const email = payload.email.toLowerCase();
+  const name = payload.name || email.split('@')[0];
+  const avatarUrl = payload.picture || '';
+
+  let user = await User.findOne({ email });
+  if (!user) {
+    user = await User.create({
+      name,
+      email,
+      provider: 'google',
+      avatarUrl
+    });
+  } else if (!user.avatarUrl && avatarUrl) {
+    user.avatarUrl = avatarUrl;
+    if (!user.provider) user.provider = 'google';
+    await user.save();
+  }
+
+  const token = attachSession(res, user);
+
+  res.json({
+    token,
+    user: {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      avatarUrl: user.avatarUrl,
+      savedDesigns: user.savedDesigns
+    }
+  });
 };
 
 export const logout = async (_req, res) => {

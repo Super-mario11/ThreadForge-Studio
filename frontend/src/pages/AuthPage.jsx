@@ -2,14 +2,16 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Eye, EyeOff } from 'lucide-react';
+import { GoogleLogin } from '@react-oauth/google';
 import SectionTitle from '../components/SectionTitle.jsx';
 import { useAuth } from '../providers/AuthProvider.jsx';
 import { useToast } from '../providers/ToastProvider.jsx';
 
 export default function AuthPage() {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
   const toast = useToast();
+  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim();
   const [mode, setMode] = useState('login');
   const [form, setForm] = useState({ name: '', email: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
@@ -26,6 +28,26 @@ export default function AuthPage() {
     } catch (submitError) {
       setError(submitError.message);
       toast.error({ title: 'Auth failed', description: submitError.message });
+    }
+  };
+
+  const handleGoogleSuccess = async (response) => {
+    const credential = response?.credential;
+    if (!credential) {
+      const message = 'Google login failed. Please try again.';
+      setError(message);
+      toast.error({ title: 'Google auth failed', description: message });
+      return;
+    }
+
+    setError('');
+    try {
+      await loginWithGoogle(credential);
+      toast.success({ title: 'Welcome', description: 'Signed in with Google.' });
+      navigate('/dashboard');
+    } catch (submitError) {
+      setError(submitError.message);
+      toast.error({ title: 'Google auth failed', description: submitError.message });
     }
   };
 
@@ -102,9 +124,31 @@ export default function AuthPage() {
             {mode === 'login' ? 'Login' : 'Create account'}
           </button>
 
-          <button type="button" className="mt-3 w-full rounded-full border border-black/10 px-5 py-4 text-sm font-bold uppercase tracking-[0.2em]">
-            Google OAuth Placeholder
-          </button>
+          <div className="mt-4">
+            {googleClientId ? (
+              <div className="flex justify-center">
+                <GoogleLogin
+                  onSuccess={handleGoogleSuccess}
+                  onError={() => {
+                    const message = 'Google sign-in popup could not be completed.';
+                    setError(message);
+                    toast.error({ title: 'Google auth failed', description: message });
+                  }}
+                  text={mode === 'login' ? 'signin_with' : 'signup_with'}
+                  shape="pill"
+                  size="large"
+                />
+              </div>
+            ) : (
+              <button
+                type="button"
+                disabled
+                className="w-full cursor-not-allowed rounded-full border border-black/10 px-5 py-4 text-sm font-bold uppercase tracking-[0.2em] text-black/40"
+              >
+                Google auth not configured
+              </button>
+            )}
+          </div>
 
           {error ? <p className="mt-4 text-sm text-crimson">{error}</p> : null}
         </motion.form>

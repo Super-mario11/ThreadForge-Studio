@@ -1,5 +1,8 @@
 import { z } from 'zod';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import Order from '../models/Order.js';
+import Product from '../models/Product.js';
+import { catalogProducts } from '../data/catalog.js';
 import stripe from '../config/stripe.js';
 import { calculateCartTotals } from '../services/pricing.service.js';
 import { sendOrderConfirmationEmail } from '../services/email.service.js';
@@ -9,10 +12,8 @@ const checkoutSchema = z.object({
   email: z.string().email(),
   items: z.array(
     z.object({
-      productId: z.string(),
-      name: z.string(),
+      productId: z.string().min(1),
       quantity: z.number().int().min(1),
-      unitPrice: z.number().positive(),
       previewUrl: z.string().url(),
       variant: z.object({
         size: z.string(),
@@ -37,18 +38,68 @@ const checkoutSchema = z.object({
   })
 });
 
+const fallbackProductsBySlug = new Map(
+  catalogProducts.map((product) => [product.slug, product])
+);
+const OFFLINE_CONFIRMATION_TTL_MINUTES = Number.parseInt(
+  process.env.OFFLINE_CONFIRMATION_TTL_MINUTES || '30',
+  10
+);
+const OFFLINE_CONFIRMATION_TTL_MS =
+  Number.isFinite(OFFLINE_CONFIRMATION_TTL_MINUTES) && OFFLINE_CONFIRMATION_TTL_MINUTES > 0
+    ? OFFLINE_CONFIRMATION_TTL_MINUTES * 60 * 1000
+    : 30 * 60 * 1000;
+
+const sha256 = (value) => createHash('sha256').update(value).digest('hex');
+
+const isValidOfflineToken = ({ providedToken, expectedHash }) => {
+  if (!providedToken || !expectedHash) return false;
+
+  const providedHash = sha256(providedToken);
+  const providedBuffer = Buffer.from(providedHash, 'hex');
+  const expectedBuffer = Buffer.from(expectedHash, 'hex');
+  if (providedBuffer.length !== expectedBuffer.length) return false;
+
+  return timingSafeEqual(providedBuffer, expectedBuffer);
+};
+
+const resolveCheckoutItems = async (items) => {
+  const requestedIds = [...new Set(items.map((item) => item.productId))];
+  const dbProducts = await Product.find({ _id: { $in: requestedIds } }).lean();
+  const dbById = new Map(dbProducts.map((product) => [String(product._id), product]));
+
+  return items.map((item) => {
+    const product = dbById.get(item.productId) || fallbackProductsBySlug.get(item.productId);
+
+    if (!product) {
+      throw createError(400, `Product not found: ${item.productId}`);
+    }
+
+    return {
+      productId: item.productId,
+      name: product.name,
+      quantity: item.quantity,
+      unitPrice: product.basePrice,
+      previewUrl: item.previewUrl,
+      variant: item.variant,
+      customization: item.customization
+    };
+  });
+};
+
 export const createCheckoutSession = async (req, res) => {
   const parsed = checkoutSchema.safeParse(req.body);
   if (!parsed.success) {
     throw createError(400, 'Invalid checkout payload', parsed.error.flatten());
   }
 
-  const { subtotal, shipping, tax, total } = calculateCartTotals(parsed.data.items);
+  const normalizedItems = await resolveCheckoutItems(parsed.data.items);
+  const { subtotal, shipping, tax, total } = calculateCartTotals(normalizedItems);
 
   const order = await Order.create({
     userId: req.user?._id,
     email: parsed.data.email,
-    items: parsed.data.items,
+    items: normalizedItems,
     amountSubtotal: subtotal,
     amountShipping: shipping,
     amountTax: tax,
@@ -57,10 +108,16 @@ export const createCheckoutSession = async (req, res) => {
   });
 
   if (!stripe || !process.env.STRIPE_SECRET_KEY) {
+    const offlineConfirmationToken = randomBytes(24).toString('hex');
+    order.offlineConfirmationTokenHash = sha256(offlineConfirmationToken);
+    order.offlineConfirmationTokenExpiresAt = new Date(Date.now() + OFFLINE_CONFIRMATION_TTL_MS);
+    await order.save();
+
     res.status(201).json({
       orderId: order._id,
       clientSecret: 'offline-demo',
-      amountTotal: total
+      amountTotal: total,
+      offlineConfirmationToken
     });
     return;
   }
@@ -97,7 +154,7 @@ export const handleStripeWebhook = async (req, res) => {
   if (event.type === 'payment_intent.succeeded') {
     const paymentIntent = event.data.object;
     const order = await Order.findOne({ paymentIntentId: paymentIntent.id });
-    if (order) {
+    if (order && order.status !== 'paid') {
       order.status = 'paid';
       await order.save();
       await sendOrderConfirmationEmail({
@@ -117,18 +174,58 @@ export const listMyOrders = async (req, res) => {
 };
 
 export const confirmOfflineOrder = async (req, res) => {
-  const order = await Order.findById(req.params.orderId);
+  const offlineAllowed =
+    process.env.ALLOW_OFFLINE_PAYMENTS === 'true' || process.env.NODE_ENV !== 'production';
+
+  if (!offlineAllowed) {
+    throw createError(403, 'Offline payment confirmation is disabled');
+  }
+
+  const providedToken =
+    typeof req.body?.offlineConfirmationToken === 'string'
+      ? req.body.offlineConfirmationToken.trim()
+      : '';
+
+  if (!providedToken) {
+    throw createError(401, 'Offline confirmation token is required');
+  }
+
+  const order = await Order.findById(req.params.orderId).select(
+    '+offlineConfirmationTokenHash +offlineConfirmationTokenExpiresAt'
+  );
   if (!order) {
     throw createError(404, 'Order not found');
   }
 
-  order.status = 'paid';
-  await order.save();
-  await sendOrderConfirmationEmail({
-    to: order.email,
-    orderId: order._id,
-    total: order.amountTotal
-  });
+  if (!order.offlineConfirmationTokenHash || !order.offlineConfirmationTokenExpiresAt) {
+    throw createError(401, 'Offline confirmation token is invalid');
+  }
 
-  res.json({ order });
+  if (order.offlineConfirmationTokenExpiresAt.getTime() < Date.now()) {
+    throw createError(401, 'Offline confirmation token has expired');
+  }
+
+  if (
+    !isValidOfflineToken({
+      providedToken,
+      expectedHash: order.offlineConfirmationTokenHash
+    })
+  ) {
+    throw createError(401, 'Offline confirmation token is invalid');
+  }
+
+  if (order.status !== 'paid') {
+    order.status = 'paid';
+    order.offlineConfirmationTokenHash = undefined;
+    order.offlineConfirmationTokenExpiresAt = undefined;
+    await order.save();
+    await sendOrderConfirmationEmail({
+      to: order.email,
+      orderId: order._id,
+      total: order.amountTotal
+    });
+  }
+
+  const safeOrder = await Order.findById(order._id);
+  res.json({ order: safeOrder });
 };

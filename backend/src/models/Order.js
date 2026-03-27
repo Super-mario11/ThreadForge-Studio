@@ -35,6 +35,8 @@ const orderSchema = new mongoose.Schema(
       enum: ['pending', 'paid', 'processing', 'fulfilled', 'cancelled'],
       default: 'pending'
     },
+    offlineConfirmationTokenHash: { type: String, select: false },
+    offlineConfirmationTokenExpiresAt: { type: Date, select: false },
     paymentIntentId: String,
     shippingAddress: {
       fullName: { type: String, required: true },

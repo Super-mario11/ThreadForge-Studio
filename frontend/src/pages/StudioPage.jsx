@@ -11,8 +11,8 @@ import { useAuth } from '../providers/AuthProvider.jsx';
 import { useToast } from '../providers/ToastProvider.jsx';
 
 const fallbackColors = [
-  { label: 'White', value: '#ffffff' },
   { label: 'Black', value: '#111111' },
+  { label: 'White', value: '#ffffff' },
   { label: 'Electric', value: '#265DFF' },
   { label: 'Crimson', value: '#E74646' }
 ];
@@ -57,7 +57,7 @@ export default function StudioPage() {
   const [tshirtColorName, setTshirtColorName] = useState(fallbackColors[0].label);
   const [transform, setTransform] = useState({
     x: 180,
-    y: 180,
+    y: 205,
     scale: 0.55,
     rotation: 0,
     opacity: 1,
@@ -65,7 +65,7 @@ export default function StudioPage() {
   });
   const [textConfig, setTextConfig] = useState({
     x: 180,
-    y: 380,
+    y: 245,
     text: '',
     fontFamily: 'Space Grotesk',
     fontSize: 28,
@@ -99,7 +99,8 @@ export default function StudioPage() {
 
   useEffect(() => {
     const preferredSwatch = preset?.color ? swatches.find((swatch) => swatch.label === preset.color) : null;
-    const nextSwatch = preferredSwatch || swatches[0] || fallbackColors[0];
+    const blackSwatch = swatches.find((swatch) => swatch.label.toLowerCase() === 'black');
+    const nextSwatch = preferredSwatch || blackSwatch || swatches[0] || fallbackColors[0];
     setTshirtColor(nextSwatch.value);
     setTshirtColorName(nextSwatch.label);
   }, [preset?.color, swatches]);
@@ -112,7 +113,7 @@ export default function StudioPage() {
   const resetTransform = () => {
     setTransform({
       x: 180,
-      y: 180,
+      y: 205,
       scale: 0.55,
       rotation: 0,
       opacity: 1,
@@ -124,7 +125,7 @@ export default function StudioPage() {
     setTextConfig((current) => ({
       ...current,
       x: 180,
-      y: 380
+      y: 245
     }));
   };
 
@@ -343,7 +344,7 @@ export default function StudioPage() {
               onTextConfigChange={(next) => setTextConfig((current) => ({ ...current, ...next }))}
             />
             <div className="flex justify-center">
-              <TshirtPreview color={tshirtColor} artwork={selectedArtwork} title={`${activeSide} Preview`} size="small" />
+              <TshirtPreview color={tshirtColor} artwork={selectedArtwork} title={`${activeSide} Preview`} size="small" template="studio" />
             </div>
           </div>
 

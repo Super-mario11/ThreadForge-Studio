@@ -27,6 +27,20 @@ export function AuthProvider({ children }) {
     return data.user;
   };
 
+  const loginWithGoogle = async (credential) => {
+    const data = await api('/auth/google', {
+      method: 'POST',
+      body: JSON.stringify({ credential })
+    });
+
+    if (data.token) {
+      setAuthToken(data.token);
+    }
+
+    setUser(data.user);
+    return data.user;
+  };
+
   const logout = async () => {
     setAuthToken('');
     try {
@@ -45,6 +59,7 @@ export function AuthProvider({ children }) {
         user,
         loading,
         login,
+        loginWithGoogle,
         logout,
         setUser
       }}

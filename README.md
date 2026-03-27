@@ -25,9 +25,10 @@ ThreadForge Studio is a full-stack custom apparel platform where shoppers can ge
 ## Docker
 
 - Start the full stack with `docker compose up --build`
-- Frontend preview runs on `http://localhost:4173`
+- Frontend runs on `http://localhost:4173`
 - Backend API runs on `http://localhost:5000`
 - MongoDB runs on `mongodb://localhost:27017`
+- Compose now waits for MongoDB and backend healthchecks before starting dependent services
 
 ## Production notes
 

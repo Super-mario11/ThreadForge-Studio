@@ -44,7 +44,10 @@ export default function CheckoutPage() {
 
       if (data.clientSecret === 'offline-demo') {
         await api(`/orders/${data.orderId}/confirm-offline`, {
-          method: 'POST'
+          method: 'POST',
+          body: JSON.stringify({
+            offlineConfirmationToken: data.offlineConfirmationToken
+          })
         });
       }
 
