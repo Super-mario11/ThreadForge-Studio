@@ -52,7 +52,7 @@ export default function HomePage() {
           </div>
         </div>
         <div className="flex justify-center">
-          <TshirtPreview color="#fefefe" artwork="https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?auto=format&fit=crop&w=800&q=80" title="Rotating Mockup" />
+          <TshirtPreview color="#111111" artwork="/white.png" title="Studio Preview" />
         </div>
       </section>
 
@@ -77,7 +77,7 @@ export default function HomePage() {
         <SectionTitle
           eyebrow="Featured"
           title="Pick a blank, then customize"
-          description="Fast picks for quick demos."
+          description="Two t-shirts, ready to customize."
         />
         <div className="mt-10 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
           {loading

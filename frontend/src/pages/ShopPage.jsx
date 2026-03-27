@@ -7,9 +7,9 @@ import ProductCardSkeleton from '../components/ProductCardSkeleton.jsx';
 import ProductQuickView from '../components/ProductQuickView.jsx';
 import { useProducts } from '../queries/useProducts.js';
 
-const categories = ['All', 'Oversized T-Shirts', 'Regular Fit', 'Hoodies', 'Polo', 'Custom Collection'];
+const categories = ['All', 'Regular Fit'];
 const sizes = ['All', 'S', 'M', 'L', 'XL'];
-const colors = ['All', 'Black', 'White', 'Off White', 'Cobalt', 'Crimson', 'Navy', 'Charcoal', 'Stone', 'Forest', 'Graphite'];
+const colors = ['All', 'Black', 'White'];
 const sorts = [
   { label: 'Featured', value: 'featured' },
   { label: 'Popularity', value: 'popularity' },
@@ -39,8 +39,8 @@ export default function ShopPage() {
     <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
       <SectionTitle
         eyebrow="Collection"
-        title="Demo products"
-        description="Filter and jump into the studio."
+        title="T-Shirt Collection"
+        description="Choose black or white and jump into the studio."
       />
 
       <div className="mt-10 flex flex-wrap items-center justify-between gap-3 lg:hidden">

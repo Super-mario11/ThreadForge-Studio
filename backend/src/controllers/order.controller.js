@@ -38,6 +38,22 @@ const checkoutSchema = z.object({
   })
 });
 
+const quoteSchema = z.object({
+  items: z.array(
+    z.object({
+      productId: z.string().min(1),
+      quantity: z.number().int().min(1)
+    })
+  ),
+  shippingAddress: z
+    .object({
+      state: z.string().optional(),
+      postalCode: z.string().optional(),
+      country: z.string().optional()
+    })
+    .optional()
+});
+
 const fallbackProductsBySlug = new Map(
   catalogProducts.map((product) => [product.slug, product])
 );
@@ -83,6 +99,25 @@ const resolveCheckoutItems = async (items) => {
       previewUrl: item.previewUrl,
       variant: item.variant,
       customization: item.customization
+    };
+  });
+};
+
+const resolveQuoteItems = async (items) => {
+  const requestedIds = [...new Set(items.map((item) => item.productId))];
+  const dbProducts = await Product.find({ _id: { $in: requestedIds } }).lean();
+  const dbById = new Map(dbProducts.map((product) => [String(product._id), product]));
+
+  return items.map((item) => {
+    const product = dbById.get(item.productId) || fallbackProductsBySlug.get(item.productId);
+    if (!product) {
+      throw createError(400, `Product not found: ${item.productId}`);
+    }
+
+    return {
+      productId: item.productId,
+      quantity: item.quantity,
+      unitPrice: product.basePrice
     };
   });
 };
@@ -141,6 +176,18 @@ export const createCheckoutSession = async (req, res) => {
     clientSecret: paymentIntent.client_secret,
     amountTotal: total
   });
+};
+
+export const getCheckoutQuote = async (req, res) => {
+  const parsed = quoteSchema.safeParse(req.body);
+  if (!parsed.success) {
+    throw createError(400, 'Invalid quote payload', parsed.error.flatten());
+  }
+
+  const normalizedItems = await resolveQuoteItems(parsed.data.items);
+
+  const totals = calculateCartTotals(normalizedItems, parsed.data.shippingAddress || {});
+  res.json({ totals });
 };
 
 export const handleStripeWebhook = async (req, res) => {

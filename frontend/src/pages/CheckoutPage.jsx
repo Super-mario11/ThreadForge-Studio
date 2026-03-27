@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import SectionTitle from '../components/SectionTitle.jsx';
 import { api } from '../lib/api.js';
@@ -17,15 +17,69 @@ export default function CheckoutPage() {
     city: '',
     state: '',
     postalCode: '',
-    country: 'United States'
+    country: 'India'
   });
   const [email, setEmail] = useState(user?.email || '');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [quote, setQuote] = useState({
+    subtotal,
+    shipping: 0,
+    tax: 0,
+    total: subtotal,
+    meta: { currency: 'INR' }
+  });
 
-  const shipping = subtotal > 100 ? 0 : 9;
-  const tax = Number((subtotal * 0.08).toFixed(2));
-  const total = subtotal + shipping + tax;
+  useEffect(() => {
+    if (!items.length) {
+      setQuote({
+        subtotal: 0,
+        shipping: 0,
+        tax: 0,
+        total: 0,
+        meta: { currency: 'INR' }
+      });
+      return;
+    }
+
+    let active = true;
+    setQuoteLoading(true);
+
+    const timer = setTimeout(async () => {
+      try {
+        const data = await api('/orders/quote', {
+          method: 'POST',
+          body: JSON.stringify({
+            items: items.map((item) => ({
+              productId: item.productId,
+              quantity: item.quantity
+            })),
+            shippingAddress: {
+              state: address.state,
+              postalCode: address.postalCode,
+              country: address.country
+            }
+          })
+        });
+
+        if (active) {
+          setQuote(data.totals);
+        }
+      } catch {
+        // Keep previous quote on transient failures.
+      } finally {
+        if (active) {
+          setQuoteLoading(false);
+        }
+      }
+    }, 250);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [items, address.state, address.postalCode, address.country]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -65,7 +119,7 @@ export default function CheckoutPage() {
       <SectionTitle
         eyebrow="Checkout"
         title="Ship the finished pieces"
-        description="Enter shipping details."
+        description="Enter shipping details. Charges update by delivery location."
       />
 
       <div className="mt-10 grid gap-8 lg:grid-cols-[1fr_360px]">
@@ -99,21 +153,24 @@ export default function CheckoutPage() {
           <div className="mt-6 space-y-3 text-sm text-black/60">
             <div className="flex justify-between">
               <span>Subtotal</span>
-              <span>{currency(subtotal)}</span>
+              <span>{currency(quote.subtotal)}</span>
             </div>
             <div className="flex justify-between">
               <span>Shipping</span>
-              <span>{currency(shipping)}</span>
+              <span>{currency(quote.shipping)}</span>
             </div>
             <div className="flex justify-between">
               <span>Tax</span>
-              <span>{currency(tax)}</span>
+              <span>{currency(quote.tax)}</span>
             </div>
           </div>
           <div className="mt-6 flex justify-between border-t border-black/10 pt-4 text-lg font-bold">
             <span>Total</span>
-            <span>{currency(total)}</span>
+            <span>{currency(quote.total)}</span>
           </div>
+          <p className="mt-3 text-xs text-black/45">
+            {quoteLoading ? 'Updating delivery charges...' : 'Shipping and tax change based on delivery address.'}
+          </p>
         </aside>
       </div>
     </div>

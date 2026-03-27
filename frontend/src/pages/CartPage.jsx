@@ -8,9 +8,6 @@ import { useToast } from '../providers/ToastProvider.jsx';
 export default function CartPage() {
   const { items, subtotal, removeItem, updateQuantity } = useCart();
   const toast = useToast();
-  const shipping = subtotal > 100 ? 0 : 9;
-  const tax = subtotal * 0.08;
-  const total = subtotal + shipping + tax;
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
@@ -91,17 +88,18 @@ export default function CartPage() {
             </div>
             <div className="flex justify-between">
               <span>Shipping</span>
-              <span>{currency(shipping)}</span>
+              <span>Calculated at checkout</span>
             </div>
             <div className="flex justify-between">
               <span>Tax</span>
-              <span>{currency(tax)}</span>
+              <span>Calculated at checkout</span>
             </div>
           </div>
           <div className="mt-6 flex justify-between border-t border-white/10 pt-4 text-lg font-bold">
-            <span>Total</span>
-            <span>{currency(total)}</span>
+            <span>Subtotal</span>
+            <span>{currency(subtotal)}</span>
           </div>
+          <p className="mt-3 text-xs text-paper/60">Final shipping and tax are calculated after you enter delivery address.</p>
           <Link
             to="/checkout"
             className="mt-6 block rounded-full bg-accent-gradient px-5 py-4 text-center text-sm font-bold uppercase tracking-[0.2em] text-white shadow-glow transition hover:-translate-y-0.5 active:scale-[0.99]"

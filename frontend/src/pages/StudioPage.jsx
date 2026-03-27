@@ -82,7 +82,7 @@ export default function StudioPage() {
 
   const swatches = useMemo(() => toSwatches(product?.colors), [product?.colors]);
   const availableSizes = useMemo(() => product?.sizes || ['S', 'M', 'L', 'XL'], [product?.sizes]);
-  const basePrice = product?.basePrice ?? 29;
+  const basePrice = product?.basePrice ?? 799;
   const productName = product?.name ?? 'Studio Regular Tee';
   const productId = product?._id ?? 'fallback-2';
   const productType = product?.category ?? 'Regular Fit';
@@ -106,7 +106,7 @@ export default function StudioPage() {
   }, [preset?.color, swatches]);
 
   const livePrice = useMemo(() => {
-    const printAreaPrice = Math.round(transform.scale * 12);
+    const printAreaPrice = Math.round(transform.scale * 120);
     return basePrice + printAreaPrice;
   }, [basePrice, transform.scale]);
 
@@ -329,7 +329,7 @@ export default function StudioPage() {
             </div>
             <div className="text-right">
               <p className="text-xs font-bold uppercase tracking-[0.25em] text-black/45">{productType}</p>
-              <p className="text-sm font-bold uppercase tracking-[0.25em] text-electric">Live Price {livePrice} USD</p>
+              <p className="text-sm font-bold uppercase tracking-[0.25em] text-electric">Live Price ₹{livePrice}</p>
             </div>
           </div>
 

@@ -1,5 +1,4 @@
 import Product from '../models/Product.js';
-import { catalogProducts } from '../data/catalog.js';
 
 export const listProducts = async (req, res) => {
   const { category, size, color, sort = 'featured' } = req.query;
@@ -9,20 +8,7 @@ export const listProducts = async (req, res) => {
   if (size) filters.sizes = size;
   if (color) filters.colors = color;
 
-  let products = await Product.find(filters);
-
-  if (!products.length) {
-    products = catalogProducts
-      .filter((product) => {
-        return (!category || product.category === category) &&
-          (!size || product.sizes.includes(size)) &&
-          (!color || product.colors.includes(color));
-      })
-      .map((product) => ({
-        ...product,
-        _id: product.slug
-      }));
-  }
+  const products = await Product.find(filters);
 
   const sorters = {
     featured: (a, b) => Number(b.featured) - Number(a.featured),
@@ -36,12 +22,6 @@ export const listProducts = async (req, res) => {
 };
 
 export const getFeaturedProducts = async (_req, res) => {
-  const products = await Product.find({ featured: true }).limit(6);
-  res.json({
-    products: products.length
-      ? products
-      : catalogProducts
-          .filter((product) => product.featured)
-          .map((product) => ({ ...product, _id: product.slug }))
-  });
+  const products = await Product.find({ featured: true }).limit(2);
+  res.json({ products });
 };
