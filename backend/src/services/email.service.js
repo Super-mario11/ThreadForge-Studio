@@ -8,7 +8,7 @@ const formatCurrency = (value) => {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(safeValue);
 };
 
-export const sendOrderConfirmationEmail = async ({ to, orderId, total }) => {
+export const sendOrderConfirmationEmail = async ({ to, trackingId, total }) => {
   if (!resend) {
     return;
   }
@@ -16,7 +16,7 @@ export const sendOrderConfirmationEmail = async ({ to, orderId, total }) => {
   await resend.emails.send({
     from: process.env.EMAIL_FROM,
     to,
-    subject: `ThreadForge order confirmed #${orderId}`,
-    html: `<p>Your order has been confirmed.</p><p>Total: ${formatCurrency(total)}</p>`
+    subject: `ThreadForge order confirmed ${trackingId}`,
+    html: `<p>Your order has been confirmed.</p><p>Tracking ID: <strong>${trackingId}</strong></p><p>Total: ${formatCurrency(total)}</p>`
   });
 };

@@ -106,7 +106,8 @@ export default function CheckoutPage() {
       }
 
       clearCart();
-      navigate(`/order-success/${data.orderId}`);
+      const trackingQuery = data.trackingId ? `?tracking=${encodeURIComponent(data.trackingId)}` : '';
+      navigate(`/order-success/${data.orderId}${trackingQuery}`);
     } catch (submitError) {
       setError(submitError.message);
     } finally {

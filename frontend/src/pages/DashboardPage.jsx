@@ -1,12 +1,12 @@
 import { Navigate } from 'react-router-dom';
 import SectionTitle from '../components/SectionTitle.jsx';
-import { currency } from '../lib/format.js';
+import { currency, formatDate } from '../lib/format.js';
 import { useAuth } from '../providers/AuthProvider.jsx';
 import { useOrders } from '../queries/useOrders.js';
 
 export default function DashboardPage() {
   const { user, loading, logout } = useAuth();
-  const { orders } = useOrders(Boolean(user));
+  const { orders, loading: ordersLoading } = useOrders(Boolean(user));
 
   if (!loading && !user) {
     return <Navigate to="/auth" replace />;
@@ -48,14 +48,21 @@ export default function DashboardPage() {
         <section className="rounded-[2rem] border border-black/8 bg-ink p-6 text-paper">
           <h3 className="font-display text-3xl font-bold">Order History</h3>
           <div className="mt-6 space-y-4">
-            {orders.length ? (
+            {ordersLoading ? (
+              <p className="text-paper/65">Loading your orders...</p>
+            ) : orders.length ? (
               orders.map((order) => (
                 <article key={order._id} className="rounded-[1.5rem] border border-white/10 bg-white/5 p-4">
-                  <div className="flex items-center justify-between">
-                    <p className="font-bold">#{order._id.slice(-6)}</p>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="font-bold">{order.trackingId || `TF-LEGACY-${order._id.slice(-6).toUpperCase()}`}</p>
                     <p className="text-sm uppercase tracking-[0.2em] text-paper/60">{order.status}</p>
                   </div>
-                  <p className="mt-2 text-sm text-paper/70">{order.items.length} items · {currency(order.amountTotal)}</p>
+                  <p className="mt-2 text-sm text-paper/70">
+                    {order.items.length} items | {currency(order.amountTotal)}
+                  </p>
+                  <p className="mt-1 text-xs uppercase tracking-[0.12em] text-paper/55">
+                    Placed on {formatDate(order.createdAt)}
+                  </p>
                 </article>
               ))
             ) : (

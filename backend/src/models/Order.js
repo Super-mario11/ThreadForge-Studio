@@ -1,4 +1,11 @@
 import mongoose from 'mongoose';
+import { randomBytes } from 'node:crypto';
+
+const createTrackingId = () => {
+  const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const randomPart = randomBytes(3).toString('hex').toUpperCase();
+  return `TF-${datePart}-${randomPart}`;
+};
 
 const orderItemSchema = new mongoose.Schema(
   {
@@ -24,6 +31,13 @@ const orderItemSchema = new mongoose.Schema(
 const orderSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    trackingId: {
+      type: String,
+      required: true,
+      unique: true,
+      immutable: true,
+      default: createTrackingId
+    },
     email: { type: String, required: true },
     items: [orderItemSchema],
     amountSubtotal: { type: Number, required: true },
@@ -50,5 +64,12 @@ const orderSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+orderSchema.pre('validate', function setTrackingId(next) {
+  if (!this.trackingId) {
+    this.trackingId = createTrackingId();
+  }
+  next();
+});
 
 export default mongoose.model('Order', orderSchema);

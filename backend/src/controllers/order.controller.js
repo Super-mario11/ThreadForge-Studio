@@ -66,6 +66,14 @@ const OFFLINE_CONFIRMATION_TTL_MS =
   Number.isFinite(OFFLINE_CONFIRMATION_TTL_MINUTES) && OFFLINE_CONFIRMATION_TTL_MINUTES > 0
     ? OFFLINE_CONFIRMATION_TTL_MINUTES * 60 * 1000
     : 30 * 60 * 1000;
+const buildFallbackTrackingId = (order) => `TF-LEGACY-${String(order?._id || '').slice(-6).toUpperCase()}`;
+const toOrderResponse = (order) => {
+  const plainOrder = typeof order?.toObject === 'function' ? order.toObject() : order;
+  return {
+    ...plainOrder,
+    trackingId: plainOrder?.trackingId || buildFallbackTrackingId(plainOrder)
+  };
+};
 
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
 
@@ -159,6 +167,7 @@ export const createCheckoutSession = async (req, res) => {
 
     res.status(201).json({
       orderId: order._id,
+      trackingId: order.trackingId,
       clientSecret: 'offline-demo',
       amountTotal: total,
       offlineConfirmationToken
@@ -182,6 +191,7 @@ export const createCheckoutSession = async (req, res) => {
 
   res.status(201).json({
     orderId: order._id,
+    trackingId: order.trackingId,
     clientSecret: paymentIntent.client_secret,
     amountTotal: total
   });
@@ -215,7 +225,7 @@ export const handleStripeWebhook = async (req, res) => {
       await order.save();
       await sendOrderConfirmationEmail({
         to: order.email,
-        orderId: order._id,
+        trackingId: order.trackingId || buildFallbackTrackingId(order),
         total: order.amountTotal
       });
     }
@@ -226,7 +236,7 @@ export const handleStripeWebhook = async (req, res) => {
 
 export const listMyOrders = async (req, res) => {
   const orders = await Order.find({ userId: req.user._id }).sort({ createdAt: -1 });
-  res.json({ orders });
+  res.json({ orders: orders.map(toOrderResponse) });
 };
 
 export const confirmOfflineOrder = async (req, res) => {
@@ -277,11 +287,11 @@ export const confirmOfflineOrder = async (req, res) => {
     await order.save();
     await sendOrderConfirmationEmail({
       to: order.email,
-      orderId: order._id,
+      trackingId: order.trackingId || buildFallbackTrackingId(order),
       total: order.amountTotal
     });
   }
 
   const safeOrder = await Order.findById(order._id);
-  res.json({ order: safeOrder });
+  res.json({ order: toOrderResponse(safeOrder) });
 };
