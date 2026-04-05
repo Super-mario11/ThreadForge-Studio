@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import mongoose from 'mongoose';
 import Order from '../models/Order.js';
 import Product from '../models/Product.js';
 import { catalogProducts } from '../data/catalog.js';
@@ -79,10 +80,19 @@ const isValidOfflineToken = ({ providedToken, expectedHash }) => {
   return timingSafeEqual(providedBuffer, expectedBuffer);
 };
 
+const loadProductsByRequestedIds = async (requestedIds) => {
+  const objectIds = requestedIds.filter((id) => mongoose.Types.ObjectId.isValid(id));
+  if (!objectIds.length) {
+    return new Map();
+  }
+
+  const dbProducts = await Product.find({ _id: { $in: objectIds } }).lean();
+  return new Map(dbProducts.map((product) => [String(product._id), product]));
+};
+
 const resolveCheckoutItems = async (items) => {
   const requestedIds = [...new Set(items.map((item) => item.productId))];
-  const dbProducts = await Product.find({ _id: { $in: requestedIds } }).lean();
-  const dbById = new Map(dbProducts.map((product) => [String(product._id), product]));
+  const dbById = await loadProductsByRequestedIds(requestedIds);
 
   return items.map((item) => {
     const product = dbById.get(item.productId) || fallbackProductsBySlug.get(item.productId);
@@ -105,8 +115,7 @@ const resolveCheckoutItems = async (items) => {
 
 const resolveQuoteItems = async (items) => {
   const requestedIds = [...new Set(items.map((item) => item.productId))];
-  const dbProducts = await Product.find({ _id: { $in: requestedIds } }).lean();
-  const dbById = new Map(dbProducts.map((product) => [String(product._id), product]));
+  const dbById = await loadProductsByRequestedIds(requestedIds);
 
   return items.map((item) => {
     const product = dbById.get(item.productId) || fallbackProductsBySlug.get(item.productId);

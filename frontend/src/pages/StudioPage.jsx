@@ -84,7 +84,7 @@ export default function StudioPage() {
   const availableSizes = useMemo(() => product?.sizes || ['S', 'M', 'L', 'XL'], [product?.sizes]);
   const basePrice = product?.basePrice ?? 799;
   const productName = product?.name ?? 'Studio Regular Tee';
-  const productId = product?._id ?? 'fallback-2';
+  const productId = product?._id ?? 'black-tshirt';
   const productType = product?.category ?? 'Regular Fit';
 
   useEffect(() => {

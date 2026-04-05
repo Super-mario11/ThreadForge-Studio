@@ -3,9 +3,21 @@ import { loadLocal, saveLocal } from '../lib/storage.js';
 
 const CartContext = createContext(null);
 const CART_KEY = 'threadforge-cart';
+const LEGACY_PRODUCT_ID_MAP = {
+  'fallback-2': 'black-tshirt'
+};
+
+function normalizeCartItems(items) {
+  if (!Array.isArray(items)) return [];
+
+  return items.map((item) => {
+    const normalizedProductId = LEGACY_PRODUCT_ID_MAP[item?.productId] || item?.productId;
+    return normalizedProductId === item?.productId ? item : { ...item, productId: normalizedProductId };
+  });
+}
 
 export function CartProvider({ children }) {
-  const [items, setItems] = useState(() => loadLocal(CART_KEY, []));
+  const [items, setItems] = useState(() => normalizeCartItems(loadLocal(CART_KEY, [])));
 
   useEffect(() => {
     saveLocal(CART_KEY, items);
