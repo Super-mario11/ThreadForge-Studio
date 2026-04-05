@@ -8,6 +8,7 @@ const AuthPage = lazy(() => import('../pages/AuthPage.jsx'));
 const DashboardPage = lazy(() => import('../pages/DashboardPage.jsx'));
 const CheckoutPage = lazy(() => import('../pages/CheckoutPage.jsx'));
 const OrderSuccessPage = lazy(() => import('../pages/OrderSuccessPage.jsx'));
+const NotFoundPage = lazy(() => import('../pages/NotFoundPage.jsx'));
 
 export const appRoutes = [
   { path: '/', Component: HomePage },
@@ -17,5 +18,6 @@ export const appRoutes = [
   { path: '/auth', Component: AuthPage },
   { path: '/dashboard', Component: DashboardPage },
   { path: '/checkout', Component: CheckoutPage },
-  { path: '/order-success/:orderId', Component: OrderSuccessPage }
+  { path: '/order-success/:orderId', Component: OrderSuccessPage },
+  { path: '*', Component: NotFoundPage }
 ];

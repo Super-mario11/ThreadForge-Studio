@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { FlipHorizontal, ImagePlus, RotateCw, Save, Wand2 } from 'lucide-react';
+import { FlipHorizontal, ImagePlus, Redo2, RotateCw, Save, Undo2, Wand2 } from 'lucide-react';
 import SectionTitle from '../components/SectionTitle.jsx';
 import StudioCanvas from '../components/StudioCanvas.jsx';
 import TshirtPreview from '../components/TshirtPreview.jsx';
@@ -29,6 +29,8 @@ const namedColorHex = {
   Navy: '#0b1f3b',
   Graphite: '#4b4b4b'
 };
+const LOW_RESOLUTION_THRESHOLD = 1000;
+const HISTORY_LIMIT = 40;
 
 function toSwatches(colorNames) {
   const names = colorNames?.length ? colorNames : fallbackColors.map((entry) => entry.label);
@@ -39,6 +41,51 @@ function toSwatches(colorNames) {
       value: namedColorHex[name] || fallback?.value || '#ffffff'
     };
   });
+}
+
+async function getResolutionWarning(file) {
+  if (!file || !file.type.startsWith('image/')) return '';
+
+  if (file.type === 'image/svg+xml') {
+    const source = await file.text();
+    const viewBox = source.match(/viewBox\s*=\s*['"]([^'"]+)['"]/i)?.[1];
+    const widthRaw = source.match(/width\s*=\s*['"]([^'"]+)['"]/i)?.[1];
+    const heightRaw = source.match(/height\s*=\s*['"]([^'"]+)['"]/i)?.[1];
+
+    let width = Number.parseFloat(widthRaw || '');
+    let height = Number.parseFloat(heightRaw || '');
+    if ((!Number.isFinite(width) || !Number.isFinite(height)) && viewBox) {
+      const parts = viewBox.trim().split(/\s+/);
+      if (parts.length === 4) {
+        width = Number.parseFloat(parts[2]);
+        height = Number.parseFloat(parts[3]);
+      }
+    }
+
+    if (Number.isFinite(width) && Number.isFinite(height)) {
+      if (width < LOW_RESOLUTION_THRESHOLD || height < LOW_RESOLUTION_THRESHOLD) {
+        return `Low resolution design (${Math.round(width)}x${Math.round(height)}). Print quality may be soft.`;
+      }
+    }
+    return '';
+  }
+
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const size = await new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight });
+      image.onerror = () => reject(new Error('Unable to inspect image'));
+      image.src = objectUrl;
+    });
+
+    if (size.width < LOW_RESOLUTION_THRESHOLD || size.height < LOW_RESOLUTION_THRESHOLD) {
+      return `Low resolution design (${size.width}x${size.height}). Print quality may be soft.`;
+    }
+    return '';
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
 }
 
 export default function StudioPage() {
@@ -74,6 +121,19 @@ export default function StudioPage() {
   const [uploading, setUploading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [saveState, setSaveState] = useState('');
+  const [historyStack, setHistoryStack] = useState([]);
+  const [futureStack, setFutureStack] = useState([]);
+  const historySyncRef = useRef(false);
+  const latestSnapshotKeyRef = useRef('');
+
+  const snapshot = useMemo(
+    () => ({
+      selectedArtwork,
+      transform,
+      textConfig
+    }),
+    [selectedArtwork, textConfig, transform]
+  );
 
   useEffect(() => {
     setProduct(location.state?.product || null);
@@ -172,6 +232,12 @@ export default function StudioPage() {
     formData.append('image', file);
 
     try {
+      const resolutionWarning = await getResolutionWarning(file);
+      if (resolutionWarning) {
+        setSaveState(resolutionWarning);
+        toast.info({ title: 'Quality warning', description: resolutionWarning });
+      }
+
       const data = await api('/uploads', {
         method: 'POST',
         body: formData
@@ -184,6 +250,63 @@ export default function StudioPage() {
     } finally {
       setUploading(false);
     }
+  };
+
+  useEffect(() => {
+    if (!historyStack.length) {
+      const initial = { selectedArtwork, transform, textConfig };
+      setHistoryStack([initial]);
+      latestSnapshotKeyRef.current = JSON.stringify(initial);
+    }
+  }, [historyStack.length, selectedArtwork, textConfig, transform]);
+
+  useEffect(() => {
+    if (historySyncRef.current || !historyStack.length) return;
+
+    const snapshotKey = JSON.stringify(snapshot);
+    if (snapshotKey === latestSnapshotKeyRef.current) return;
+
+    const timer = setTimeout(() => {
+      setHistoryStack((current) => {
+        const next = [...current, snapshot];
+        if (next.length > HISTORY_LIMIT) {
+          next.shift();
+        }
+        return next;
+      });
+      setFutureStack([]);
+      latestSnapshotKeyRef.current = snapshotKey;
+    }, 160);
+
+    return () => clearTimeout(timer);
+  }, [historyStack.length, snapshot]);
+
+  const applySnapshot = (nextSnapshot) => {
+    historySyncRef.current = true;
+    setSelectedArtwork(nextSnapshot.selectedArtwork || '');
+    setTransform(nextSnapshot.transform || transform);
+    setTextConfig(nextSnapshot.textConfig || textConfig);
+    latestSnapshotKeyRef.current = JSON.stringify(nextSnapshot);
+    setTimeout(() => {
+      historySyncRef.current = false;
+    }, 0);
+  };
+
+  const undo = () => {
+    if (historyStack.length < 2) return;
+    const currentSnapshot = historyStack[historyStack.length - 1];
+    const previousSnapshot = historyStack[historyStack.length - 2];
+    setHistoryStack((current) => current.slice(0, -1));
+    setFutureStack((current) => [currentSnapshot, ...current].slice(0, HISTORY_LIMIT));
+    applySnapshot(previousSnapshot);
+  };
+
+  const redo = () => {
+    if (!futureStack.length) return;
+    const [nextSnapshot, ...remaining] = futureStack;
+    setFutureStack(remaining);
+    setHistoryStack((current) => [...current, nextSnapshot].slice(-HISTORY_LIMIT));
+    applySnapshot(nextSnapshot);
   };
 
   const handleSaveDesign = async () => {
@@ -276,7 +399,7 @@ export default function StudioPage() {
           <label className="mt-4 flex cursor-pointer items-center justify-center gap-2 rounded-full border border-black/10 bg-white px-5 py-3 font-bold uppercase tracking-[0.2em]">
             <ImagePlus size={16} />
             {uploading ? 'Uploading...' : 'Upload Image'}
-            <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleUpload} />
+            <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden" onChange={handleUpload} />
           </label>
 
           <div className="mt-8">
@@ -387,6 +510,28 @@ export default function StudioPage() {
 
           <div className="mt-6 space-y-5">
             <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={undo}
+                disabled={historyStack.length < 2}
+                className="rounded-full border border-black/10 bg-white px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] disabled:opacity-45"
+              >
+                <span className="inline-flex items-center gap-1">
+                  <Undo2 size={14} />
+                  Undo
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={redo}
+                disabled={!futureStack.length}
+                className="rounded-full border border-black/10 bg-white px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] disabled:opacity-45"
+              >
+                <span className="inline-flex items-center gap-1">
+                  <Redo2 size={14} />
+                  Redo
+                </span>
+              </button>
               <button
                 type="button"
                 onClick={() => setSelectedArtwork('')}

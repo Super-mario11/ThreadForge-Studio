@@ -7,6 +7,8 @@ const createTrackingId = () => {
   return `TF-${datePart}-${randomPart}`;
 };
 
+const createLookupToken = () => randomBytes(24).toString('hex');
+
 const orderItemSchema = new mongoose.Schema(
   {
     productId: { type: String, required: true },
@@ -38,6 +40,19 @@ const orderSchema = new mongoose.Schema(
       immutable: true,
       default: createTrackingId
     },
+    idempotencyKey: {
+      type: String,
+      index: true
+    },
+    idempotencyPayloadHash: {
+      type: String
+    },
+    lookupToken: {
+      type: String,
+      required: true,
+      immutable: true,
+      default: createLookupToken
+    },
     email: { type: String, required: true },
     items: [orderItemSchema],
     amountSubtotal: { type: Number, required: true },
@@ -49,8 +64,6 @@ const orderSchema = new mongoose.Schema(
       enum: ['pending', 'paid', 'processing', 'fulfilled', 'cancelled'],
       default: 'pending'
     },
-    offlineConfirmationTokenHash: { type: String, select: false },
-    offlineConfirmationTokenExpiresAt: { type: Date, select: false },
     paymentIntentId: String,
     shippingAddress: {
       fullName: { type: String, required: true },
@@ -69,7 +82,20 @@ orderSchema.pre('validate', function setTrackingId(next) {
   if (!this.trackingId) {
     this.trackingId = createTrackingId();
   }
+  if (!this.lookupToken) {
+    this.lookupToken = createLookupToken();
+  }
   next();
 });
+
+orderSchema.index(
+  { idempotencyKey: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      idempotencyKey: { $exists: true, $type: 'string', $ne: '' }
+    }
+  }
+);
 
 export default mongoose.model('Order', orderSchema);

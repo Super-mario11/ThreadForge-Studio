@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import mongoose from 'mongoose';
 import Order from '../models/Order.js';
 import Product from '../models/Product.js';
@@ -55,37 +55,35 @@ const quoteSchema = z.object({
     .optional()
 });
 
-const fallbackProductsBySlug = new Map(
-  catalogProducts.map((product) => [product.slug, product])
-);
-const OFFLINE_CONFIRMATION_TTL_MINUTES = Number.parseInt(
-  process.env.OFFLINE_CONFIRMATION_TTL_MINUTES || '30',
-  10
-);
-const OFFLINE_CONFIRMATION_TTL_MS =
-  Number.isFinite(OFFLINE_CONFIRMATION_TTL_MINUTES) && OFFLINE_CONFIRMATION_TTL_MINUTES > 0
-    ? OFFLINE_CONFIRMATION_TTL_MINUTES * 60 * 1000
-    : 30 * 60 * 1000;
+const fallbackProductsBySlug = new Map(catalogProducts.map((product) => [product.slug, product]));
 const buildFallbackTrackingId = (order) => `TF-LEGACY-${String(order?._id || '').slice(-6).toUpperCase()}`;
+
+const normalizeObject = (value) => {
+  if (Array.isArray(value)) {
+    return value.map((entry) => normalizeObject(entry));
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.keys(value)
+      .sort()
+      .reduce((acc, key) => {
+        acc[key] = normalizeObject(value[key]);
+        return acc;
+      }, {});
+  }
+
+  return value;
+};
+
+const buildPayloadHash = (payload) =>
+  createHash('sha256').update(JSON.stringify(normalizeObject(payload))).digest('hex');
+
 const toOrderResponse = (order) => {
   const plainOrder = typeof order?.toObject === 'function' ? order.toObject() : order;
   return {
     ...plainOrder,
     trackingId: plainOrder?.trackingId || buildFallbackTrackingId(plainOrder)
   };
-};
-
-const sha256 = (value) => createHash('sha256').update(value).digest('hex');
-
-const isValidOfflineToken = ({ providedToken, expectedHash }) => {
-  if (!providedToken || !expectedHash) return false;
-
-  const providedHash = sha256(providedToken);
-  const providedBuffer = Buffer.from(providedHash, 'hex');
-  const expectedBuffer = Buffer.from(expectedHash, 'hex');
-  if (providedBuffer.length !== expectedBuffer.length) return false;
-
-  return timingSafeEqual(providedBuffer, expectedBuffer);
 };
 
 const loadProductsByRequestedIds = async (requestedIds) => {
@@ -139,17 +137,100 @@ const resolveQuoteItems = async (items) => {
   });
 };
 
+const readIdempotencyKey = (req) => {
+  const headerValue = req.headers['idempotency-key'];
+  if (typeof headerValue !== 'string') {
+    throw createError(400, 'Idempotency-Key header is required');
+  }
+
+  const normalized = headerValue.trim();
+  if (!normalized || normalized.length > 160) {
+    throw createError(400, 'Invalid Idempotency-Key header');
+  }
+
+  return normalized;
+};
+
+const ensureOrderReadable = ({ req, order, lookupToken }) => {
+  const isOwner =
+    req.user?._id && order.userId && String(order.userId) === String(req.user._id);
+  const tokenMatch = lookupToken && lookupToken === order.lookupToken;
+
+  if (!isOwner && !tokenMatch) {
+    throw createError(403, 'Order access denied');
+  }
+};
+
+const getClientSecretForOrder = async (order) => {
+  if (!stripe || !process.env.STRIPE_SECRET_KEY) {
+    throw createError(503, 'Payments are not configured on the server');
+  }
+
+  if (!order.paymentIntentId) {
+    const paymentIntent = await stripe.paymentIntents.create({
+      currency: process.env.STRIPE_CURRENCY || 'inr',
+      amount: Math.round(order.amountTotal * 100),
+      automatic_payment_methods: {
+        enabled: true
+      },
+      metadata: {
+        orderId: String(order._id),
+        trackingId: order.trackingId,
+        idempotencyKey: order.idempotencyKey || ''
+      }
+    });
+
+    order.paymentIntentId = paymentIntent.id;
+    await order.save();
+    return paymentIntent.client_secret;
+  }
+
+  const paymentIntent = await stripe.paymentIntents.retrieve(order.paymentIntentId);
+  return paymentIntent.client_secret;
+};
+
 export const createCheckoutSession = async (req, res) => {
+  if (!stripe || !process.env.STRIPE_SECRET_KEY) {
+    throw createError(503, 'Stripe is not configured on the server');
+  }
+
+  const idempotencyKey = readIdempotencyKey(req);
   const parsed = checkoutSchema.safeParse(req.body);
   if (!parsed.success) {
     throw createError(400, 'Invalid checkout payload', parsed.error.flatten());
   }
 
   const normalizedItems = await resolveCheckoutItems(parsed.data.items);
-  const { subtotal, shipping, tax, total } = calculateCartTotals(normalizedItems);
+  const { subtotal, shipping, tax, total } = calculateCartTotals(normalizedItems, parsed.data.shippingAddress);
+
+  const payloadHash = buildPayloadHash({
+    email: parsed.data.email,
+    items: normalizedItems,
+    shippingAddress: parsed.data.shippingAddress,
+    amountTotal: total
+  });
+
+  const existingOrder = await Order.findOne({ idempotencyKey });
+  if (existingOrder) {
+    if (existingOrder.idempotencyPayloadHash && existingOrder.idempotencyPayloadHash !== payloadHash) {
+      throw createError(409, 'Idempotency key already used with different checkout data');
+    }
+
+    const clientSecret = await getClientSecretForOrder(existingOrder);
+    return res.json({
+      orderId: existingOrder._id,
+      trackingId: existingOrder.trackingId,
+      lookupToken: existingOrder.lookupToken,
+      clientSecret,
+      amountTotal: existingOrder.amountTotal,
+      status: existingOrder.status
+    });
+  }
 
   const order = await Order.create({
     userId: req.user?._id,
+    idempotencyKey,
+    idempotencyPayloadHash: payloadHash,
     email: parsed.data.email,
     items: normalizedItems,
     amountSubtotal: subtotal,
@@ -159,41 +240,34 @@ export const createCheckoutSession = async (req, res) => {
     shippingAddress: parsed.data.shippingAddress
   });
 
-  if (!stripe || !process.env.STRIPE_SECRET_KEY) {
-    const offlineConfirmationToken = randomBytes(24).toString('hex');
-    order.offlineConfirmationTokenHash = sha256(offlineConfirmationToken);
-    order.offlineConfirmationTokenExpiresAt = new Date(Date.now() + OFFLINE_CONFIRMATION_TTL_MS);
-    await order.save();
-
-    res.status(201).json({
-      orderId: order._id,
-      trackingId: order.trackingId,
-      clientSecret: 'offline-demo',
-      amountTotal: total,
-      offlineConfirmationToken
-    });
-    return;
-  }
-
-  const paymentIntent = await stripe.paymentIntents.create({
-    currency: process.env.STRIPE_CURRENCY || 'inr',
-    amount: Math.round(total * 100),
-    automatic_payment_methods: {
-      enabled: true
+  const paymentIntent = await stripe.paymentIntents.create(
+    {
+      currency: process.env.STRIPE_CURRENCY || 'inr',
+      amount: Math.round(total * 100),
+      automatic_payment_methods: {
+        enabled: true
+      },
+      metadata: {
+        orderId: String(order._id),
+        trackingId: order.trackingId,
+        idempotencyKey
+      }
     },
-    metadata: {
-      orderId: String(order._id)
+    {
+      idempotencyKey: `pi-${idempotencyKey}`
     }
-  });
+  );
 
   order.paymentIntentId = paymentIntent.id;
   await order.save();
 
-  res.status(201).json({
+  return res.status(201).json({
     orderId: order._id,
     trackingId: order.trackingId,
+    lookupToken: order.lookupToken,
     clientSecret: paymentIntent.client_secret,
-    amountTotal: total
+    amountTotal: total,
+    status: order.status
   });
 };
 
@@ -220,7 +294,8 @@ export const handleStripeWebhook = async (req, res) => {
   if (event.type === 'payment_intent.succeeded') {
     const paymentIntent = event.data.object;
     const order = await Order.findOne({ paymentIntentId: paymentIntent.id });
-    if (order && order.status !== 'paid') {
+
+    if (order && order.status === 'pending') {
       order.status = 'paid';
       await order.save();
       await sendOrderConfirmationEmail({
@@ -239,59 +314,14 @@ export const listMyOrders = async (req, res) => {
   res.json({ orders: orders.map(toOrderResponse) });
 };
 
-export const confirmOfflineOrder = async (req, res) => {
-  const offlineAllowed =
-    process.env.ALLOW_OFFLINE_PAYMENTS === 'true' || process.env.NODE_ENV !== 'production';
+export const getOrderById = async (req, res) => {
+  const lookupToken = typeof req.query?.lookupToken === 'string' ? req.query.lookupToken.trim() : '';
+  const order = await Order.findById(req.params.orderId);
 
-  if (!offlineAllowed) {
-    throw createError(403, 'Offline payment confirmation is disabled');
-  }
-
-  const providedToken =
-    typeof req.body?.offlineConfirmationToken === 'string'
-      ? req.body.offlineConfirmationToken.trim()
-      : '';
-
-  if (!providedToken) {
-    throw createError(401, 'Offline confirmation token is required');
-  }
-
-  const order = await Order.findById(req.params.orderId).select(
-    '+offlineConfirmationTokenHash +offlineConfirmationTokenExpiresAt'
-  );
   if (!order) {
     throw createError(404, 'Order not found');
   }
 
-  if (!order.offlineConfirmationTokenHash || !order.offlineConfirmationTokenExpiresAt) {
-    throw createError(401, 'Offline confirmation token is invalid');
-  }
-
-  if (order.offlineConfirmationTokenExpiresAt.getTime() < Date.now()) {
-    throw createError(401, 'Offline confirmation token has expired');
-  }
-
-  if (
-    !isValidOfflineToken({
-      providedToken,
-      expectedHash: order.offlineConfirmationTokenHash
-    })
-  ) {
-    throw createError(401, 'Offline confirmation token is invalid');
-  }
-
-  if (order.status !== 'paid') {
-    order.status = 'paid';
-    order.offlineConfirmationTokenHash = undefined;
-    order.offlineConfirmationTokenExpiresAt = undefined;
-    await order.save();
-    await sendOrderConfirmationEmail({
-      to: order.email,
-      trackingId: order.trackingId || buildFallbackTrackingId(order),
-      total: order.amountTotal
-    });
-  }
-
-  const safeOrder = await Order.findById(order._id);
-  res.json({ order: toOrderResponse(safeOrder) });
+  ensureOrderReadable({ req, order, lookupToken });
+  res.json({ order: toOrderResponse(order) });
 };
