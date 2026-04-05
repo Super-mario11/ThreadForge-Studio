@@ -1,4 +1,4 @@
-import { BrowserRouter } from 'react-router-dom';
+import { HashRouter } from 'react-router-dom';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import { AuthProvider } from './AuthProvider.jsx';
 import { CartProvider } from './CartProvider.jsx';
@@ -15,8 +15,8 @@ export function AppProviders({ children }) {
   );
 
   return (
-    <BrowserRouter>
+    <HashRouter>
       {googleClientId ? <GoogleOAuthProvider clientId={googleClientId}>{appTree}</GoogleOAuthProvider> : appTree}
-    </BrowserRouter>
+    </HashRouter>
   );
 }
