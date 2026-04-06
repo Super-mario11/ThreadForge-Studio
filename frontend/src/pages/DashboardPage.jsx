@@ -1,4 +1,4 @@
-import { Navigate } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import SectionTitle from '../components/SectionTitle.jsx';
 import { currency, formatDate } from '../lib/format.js';
 import { useAuth } from '../providers/AuthProvider.jsx';
@@ -52,7 +52,11 @@ export default function DashboardPage() {
               <p className="text-paper/65">Loading your orders...</p>
             ) : orders.length ? (
               orders.map((order) => (
-                <article key={order._id} className="rounded-[1.5rem] border border-white/10 bg-white/5 p-4">
+                <Link
+                  key={order._id}
+                  to={`/orders/${order._id}`}
+                  className="block rounded-[1.5rem] border border-white/10 bg-white/5 p-4 transition hover:-translate-y-0.5 hover:bg-white/10"
+                >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="font-bold">{order.trackingId || `TF-LEGACY-${order._id.slice(-6).toUpperCase()}`}</p>
                     <p className="text-sm uppercase tracking-[0.2em] text-paper/60">{order.status}</p>
@@ -63,7 +67,7 @@ export default function DashboardPage() {
                   <p className="mt-1 text-xs uppercase tracking-[0.12em] text-paper/55">
                     Placed on {formatDate(order.createdAt)}
                   </p>
-                </article>
+                </Link>
               ))
             ) : (
               <p className="text-paper/65">No orders yet.</p>
