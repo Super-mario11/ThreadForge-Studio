@@ -57,6 +57,7 @@ const quoteSchema = z.object({
 
 const fallbackProductsBySlug = new Map(catalogProducts.map((product) => [product.slug, product]));
 const buildFallbackTrackingId = (order) => `TF-LEGACY-${String(order?._id || '').slice(-6).toUpperCase()}`;
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const normalizeObject = (value) => {
   if (Array.isArray(value)) {
@@ -424,7 +425,28 @@ export const handleRazorpayWebhook = async (req, res) => {
 };
 
 export const listMyOrders = async (req, res) => {
-  const orders = await Order.find({ userId: req.user._id }).sort({ createdAt: -1 });
+  const userEmail = typeof req.user?.email === 'string' ? req.user.email.trim() : '';
+  const emailRegex = userEmail ? new RegExp(`^${escapeRegex(userEmail)}$`, 'i') : null;
+
+  const filters = [{ userId: req.user._id }];
+  if (emailRegex) {
+    filters.push({ userId: null, email: emailRegex });
+  }
+
+  const orders = await Order.find({ $or: filters }).sort({ createdAt: -1 });
+
+  // Backfill ownership for historical guest orders so future queries are fast and consistent.
+  const guestOrderIds = orders.filter((order) => !order.userId).map((order) => order._id);
+  if (guestOrderIds.length) {
+    await Order.updateMany(
+      { _id: { $in: guestOrderIds }, userId: null },
+      { $set: { userId: req.user._id } }
+    );
+    orders.forEach((order) => {
+      if (!order.userId) order.userId = req.user._id;
+    });
+  }
+
   res.json({ orders: orders.map(toOrderResponse) });
 };
 
