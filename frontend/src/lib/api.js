@@ -64,6 +64,20 @@ function extractErrorMessage(body, fallback) {
   const baseMessage = typeof body.message === 'string' ? body.message : fallback;
   const details = body.details;
 
+  const issues = Array.isArray(details?.issues) ? details.issues : [];
+  if (issues.length) {
+    const firstIssue = issues[0];
+    const path =
+      firstIssue && typeof firstIssue.path === 'string' && firstIssue.path.trim()
+        ? firstIssue.path
+        : 'body';
+    const message =
+      firstIssue && typeof firstIssue.message === 'string' && firstIssue.message.trim()
+        ? firstIssue.message
+        : '';
+    return message ? `${baseMessage} (${path}): ${message}` : `${baseMessage} (${path})`;
+  }
+
   const fieldErrors = details?.fieldErrors;
   if (fieldErrors && typeof fieldErrors === 'object') {
     const firstKey = Object.keys(fieldErrors)[0];
@@ -83,14 +97,16 @@ export async function api(path, options = {}) {
     typeof FormData !== 'undefined' && options.body && options.body instanceof FormData;
   const shouldSetJsonContentType = !isFormDataBody;
 
+  const mergedHeaders = {
+    ...(shouldSetJsonContentType ? { 'Content-Type': 'application/json' } : {}),
+    ...(authToken && !hasAuthorizationHeader ? { Authorization: `Bearer ${authToken}` } : {}),
+    ...(options.headers || {})
+  };
+
   const response = await fetch(`${API_URL}${path}`, {
+    ...options,
     credentials: 'include',
-    headers: {
-      ...(shouldSetJsonContentType ? { 'Content-Type': 'application/json' } : {}),
-      ...(authToken && !hasAuthorizationHeader ? { Authorization: `Bearer ${authToken}` } : {}),
-      ...(options.headers || {})
-    },
-    ...options
+    headers: mergedHeaders
   });
 
   if (!response.ok) {

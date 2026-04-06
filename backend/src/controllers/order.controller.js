@@ -207,7 +207,19 @@ export const createCheckoutSession = async (req, res) => {
   const idempotencyKey = readIdempotencyKey(req);
   const parsed = checkoutSchema.safeParse(req.body);
   if (!parsed.success) {
-    throw createError(400, 'Invalid checkout payload', parsed.error.flatten());
+    const issues = parsed.error.issues.map((issue) => ({
+      path: issue.path.join('.') || 'body',
+      message: issue.message
+    }));
+    const firstIssue = issues[0];
+    throw createError(
+      400,
+      `Invalid checkout payload${firstIssue ? ` at ${firstIssue.path}: ${firstIssue.message}` : ''}`,
+      {
+        issues,
+        ...parsed.error.flatten()
+      }
+    );
   }
 
   const normalizedItems = await resolveCheckoutItems(parsed.data.items);
