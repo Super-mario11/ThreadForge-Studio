@@ -41,8 +41,7 @@ const orderSchema = new mongoose.Schema(
       default: createTrackingId
     },
     idempotencyKey: {
-      type: String,
-      index: true
+      type: String
     },
     idempotencyPayloadHash: {
       type: String
