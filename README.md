@@ -6,7 +6,7 @@ ThreadForge Studio is a full-stack custom apparel platform where shoppers can ge
 
 - Frontend: React, Vite, Tailwind CSS, Framer Motion, React Router, Fabric.js
 - Backend: Node.js, Express, MongoDB, Mongoose, JWT
-- Integrations: Hugging Face image generation, Cloudinary uploads, Stripe checkout, Resend email
+- Integrations: Hugging Face image generation, Cloudinary uploads, Razorpay checkout, Resend email
 
 ## Apps
 
@@ -32,7 +32,7 @@ ThreadForge Studio is a full-stack custom apparel platform where shoppers can ge
 
 ## Production notes
 
-- Configure Stripe webhook signing secret on the backend
+- Configure Razorpay webhook signing secret on the backend
 - Provide Cloudinary credentials for image storage
 - Provide Hugging Face API token for prompt-based image generation
 - Set backend `CLIENT_URL` to your deployed frontend origin (comma-separated allowed origins supported)

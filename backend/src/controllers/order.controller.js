@@ -1,10 +1,10 @@
 import { z } from 'zod';
-import { createHash } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import mongoose from 'mongoose';
 import Order from '../models/Order.js';
 import Product from '../models/Product.js';
 import { catalogProducts } from '../data/catalog.js';
-import stripe from '../config/stripe.js';
+import razorpay from '../config/razorpay.js';
 import { calculateCartTotals } from '../services/pricing.service.js';
 import { sendOrderConfirmationEmail } from '../services/email.service.js';
 import { createError } from '../utils/create-error.js';
@@ -77,6 +77,15 @@ const normalizeObject = (value) => {
 
 const buildPayloadHash = (payload) =>
   createHash('sha256').update(JSON.stringify(normalizeObject(payload))).digest('hex');
+
+const toMinorUnit = (amount) => Math.round(Number(amount || 0) * 100);
+
+const secureCompareHex = (provided, expected) => {
+  if (typeof provided !== 'string' || !provided || provided.length !== expected.length) {
+    return false;
+  }
+  return timingSafeEqual(Buffer.from(provided, 'utf8'), Buffer.from(expected, 'utf8'));
+};
 
 const toOrderResponse = (order) => {
   const plainOrder = typeof order?.toObject === 'function' ? order.toObject() : order;
@@ -161,37 +170,38 @@ const ensureOrderReadable = ({ req, order, lookupToken }) => {
   }
 };
 
-const getClientSecretForOrder = async (order) => {
-  if (!stripe || !process.env.STRIPE_SECRET_KEY) {
+const getRazorpayOrderForOrder = async (order) => {
+  if (!razorpay || !process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
     throw createError(503, 'Payments are not configured on the server');
   }
 
-  if (!order.paymentIntentId) {
-    const paymentIntent = await stripe.paymentIntents.create({
-      currency: process.env.STRIPE_CURRENCY || 'inr',
-      amount: Math.round(order.amountTotal * 100),
-      automatic_payment_methods: {
-        enabled: true
-      },
-      metadata: {
+  if (!order.paymentProviderOrderId) {
+    const razorpayOrder = await razorpay.orders.create({
+      amount: toMinorUnit(order.amountTotal),
+      currency: (process.env.RAZORPAY_CURRENCY || 'INR').toUpperCase(),
+      receipt: String(order.trackingId || order._id).slice(0, 40),
+      notes: {
         orderId: String(order._id),
         trackingId: order.trackingId,
         idempotencyKey: order.idempotencyKey || ''
       }
     });
 
-    order.paymentIntentId = paymentIntent.id;
+    order.paymentProviderOrderId = razorpayOrder.id;
     await order.save();
-    return paymentIntent.client_secret;
+    return razorpayOrder;
   }
 
-  const paymentIntent = await stripe.paymentIntents.retrieve(order.paymentIntentId);
-  return paymentIntent.client_secret;
+  return {
+    id: order.paymentProviderOrderId,
+    amount: toMinorUnit(order.amountTotal),
+    currency: (process.env.RAZORPAY_CURRENCY || 'INR').toUpperCase()
+  };
 };
 
 export const createCheckoutSession = async (req, res) => {
-  if (!stripe || !process.env.STRIPE_SECRET_KEY) {
-    throw createError(503, 'Stripe is not configured on the server');
+  if (!razorpay || !process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
+    throw createError(503, 'Razorpay is not configured on the server');
   }
 
   const idempotencyKey = readIdempotencyKey(req);
@@ -216,12 +226,15 @@ export const createCheckoutSession = async (req, res) => {
       throw createError(409, 'Idempotency key already used with different checkout data');
     }
 
-    const clientSecret = await getClientSecretForOrder(existingOrder);
+    const razorpayOrder = await getRazorpayOrderForOrder(existingOrder);
     return res.json({
       orderId: existingOrder._id,
       trackingId: existingOrder.trackingId,
       lookupToken: existingOrder.lookupToken,
-      clientSecret,
+      razorpayOrderId: razorpayOrder.id,
+      amount: razorpayOrder.amount,
+      currency: razorpayOrder.currency,
+      keyId: process.env.RAZORPAY_KEY_ID,
       amountTotal: existingOrder.amountTotal,
       status: existingOrder.status
     });
@@ -240,32 +253,28 @@ export const createCheckoutSession = async (req, res) => {
     shippingAddress: parsed.data.shippingAddress
   });
 
-  const paymentIntent = await stripe.paymentIntents.create(
-    {
-      currency: process.env.STRIPE_CURRENCY || 'inr',
-      amount: Math.round(total * 100),
-      automatic_payment_methods: {
-        enabled: true
-      },
-      metadata: {
-        orderId: String(order._id),
-        trackingId: order.trackingId,
-        idempotencyKey
-      }
-    },
-    {
-      idempotencyKey: `pi-${idempotencyKey}`
+  const razorpayOrder = await razorpay.orders.create({
+    amount: toMinorUnit(total),
+    currency: (process.env.RAZORPAY_CURRENCY || 'INR').toUpperCase(),
+    receipt: String(order.trackingId || order._id).slice(0, 40),
+    notes: {
+      orderId: String(order._id),
+      trackingId: order.trackingId,
+      idempotencyKey
     }
-  );
+  });
 
-  order.paymentIntentId = paymentIntent.id;
+  order.paymentProviderOrderId = razorpayOrder.id;
   await order.save();
 
   return res.status(201).json({
     orderId: order._id,
     trackingId: order.trackingId,
     lookupToken: order.lookupToken,
-    clientSecret: paymentIntent.client_secret,
+    razorpayOrderId: razorpayOrder.id,
+    amount: razorpayOrder.amount,
+    currency: razorpayOrder.currency,
+    keyId: process.env.RAZORPAY_KEY_ID,
     amountTotal: total,
     status: order.status
   });
@@ -283,20 +292,113 @@ export const getCheckoutQuote = async (req, res) => {
   res.json({ totals });
 };
 
-export const handleStripeWebhook = async (req, res) => {
-  if (!stripe || !process.env.STRIPE_WEBHOOK_SECRET || !process.env.STRIPE_SECRET_KEY) {
+const verifyPaymentSchema = z.object({
+  orderId: z.string().min(1),
+  lookupToken: z.string().min(1),
+  razorpayOrderId: z.string().min(1),
+  razorpayPaymentId: z.string().min(1),
+  razorpaySignature: z.string().min(1)
+});
+
+export const verifyRazorpayPayment = async (req, res) => {
+  if (!process.env.RAZORPAY_KEY_SECRET) {
+    throw createError(503, 'Razorpay is not configured on the server');
+  }
+
+  const parsed = verifyPaymentSchema.safeParse(req.body);
+  if (!parsed.success) {
+    throw createError(400, 'Invalid payment verification payload', parsed.error.flatten());
+  }
+
+  const { orderId, lookupToken, razorpayOrderId, razorpayPaymentId, razorpaySignature } = parsed.data;
+  const order = await Order.findById(orderId);
+
+  if (!order) {
+    throw createError(404, 'Order not found');
+  }
+  if (order.lookupToken !== lookupToken) {
+    throw createError(403, 'Order access denied');
+  }
+  if (order.paymentProviderOrderId && order.paymentProviderOrderId !== razorpayOrderId) {
+    throw createError(400, 'Payment order mismatch');
+  }
+
+  const expectedSignature = createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+    .update(`${razorpayOrderId}|${razorpayPaymentId}`)
+    .digest('hex');
+
+  if (!secureCompareHex(razorpaySignature, expectedSignature)) {
+    throw createError(400, 'Invalid Razorpay signature');
+  }
+
+  if (order.status === 'paid') {
+    return res.json({
+      verified: true,
+      status: order.status,
+      orderId: order._id,
+      trackingId: order.trackingId,
+      lookupToken: order.lookupToken
+    });
+  }
+
+  order.status = 'paid';
+  order.paymentProviderOrderId = razorpayOrderId;
+  order.paymentProviderPaymentId = razorpayPaymentId;
+  await order.save();
+
+  await sendOrderConfirmationEmail({
+    to: order.email,
+    trackingId: order.trackingId || buildFallbackTrackingId(order),
+    total: order.amountTotal
+  });
+
+  return res.json({
+    verified: true,
+    status: order.status,
+    orderId: order._id,
+    trackingId: order.trackingId,
+    lookupToken: order.lookupToken
+  });
+};
+
+export const handleRazorpayWebhook = async (req, res) => {
+  if (!process.env.RAZORPAY_WEBHOOK_SECRET || !process.env.RAZORPAY_KEY_SECRET) {
     return res.status(204).send();
   }
 
-  const signature = req.headers['stripe-signature'];
-  const event = stripe.webhooks.constructEvent(req.body, signature, process.env.STRIPE_WEBHOOK_SECRET);
+  const providedSignature = req.headers['x-razorpay-signature'];
+  if (typeof providedSignature !== 'string' || !providedSignature.trim()) {
+    throw createError(400, 'Missing Razorpay webhook signature');
+  }
 
-  if (event.type === 'payment_intent.succeeded') {
-    const paymentIntent = event.data.object;
-    const order = await Order.findOne({ paymentIntentId: paymentIntent.id });
+  const rawBody =
+    Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body || {}), 'utf8');
+  const expectedSignature = createHmac('sha256', process.env.RAZORPAY_WEBHOOK_SECRET)
+    .update(rawBody)
+    .digest('hex');
+
+  if (!secureCompareHex(providedSignature, expectedSignature)) {
+    throw createError(400, 'Invalid webhook signature');
+  }
+
+  let event;
+  try {
+    event = JSON.parse(rawBody.toString('utf8'));
+  } catch {
+    throw createError(400, 'Invalid webhook payload');
+  }
+
+  if (event.event === 'payment.captured') {
+    const payment = event.payload?.payment?.entity;
+    const orderRef = payment?.notes?.orderId;
+    const order = orderRef
+      ? await Order.findById(orderRef)
+      : await Order.findOne({ paymentProviderOrderId: payment?.order_id });
 
     if (order && order.status === 'pending') {
       order.status = 'paid';
+      order.paymentProviderOrderId = payment?.order_id || order.paymentProviderOrderId;
+      order.paymentProviderPaymentId = payment?.id || order.paymentProviderPaymentId;
       await order.save();
       await sendOrderConfirmationEmail({
         to: order.email,

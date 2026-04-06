@@ -1,14 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js';
-import { loadStripe } from '@stripe/stripe-js';
+import { useEffect, useState } from 'react';
 import SectionTitle from '../components/SectionTitle.jsx';
 import { api } from '../lib/api.js';
 import { currency } from '../lib/format.js';
 import { useAuth } from '../providers/AuthProvider.jsx';
 import { useCart } from '../providers/CartProvider.jsx';
-
-const stripePublishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY?.trim();
-const stripePromise = stripePublishableKey ? loadStripe(stripePublishableKey) : null;
 
 const buildIdempotencyKey = () => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -20,8 +15,21 @@ const buildIdempotencyKey = () => {
 const buildSuccessPath = (orderId, lookupToken) =>
   `/order-success/${orderId}?lookupToken=${encodeURIComponent(lookupToken)}`;
 
-const buildStripeReturnUrl = (orderId, lookupToken) =>
-  `${window.location.origin}/#${buildSuccessPath(orderId, lookupToken)}`;
+const loadRazorpayCheckoutScript = async () => {
+  if (typeof window === 'undefined') return false;
+  if (window.Razorpay) return true;
+
+  await new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.async = true;
+    script.onload = resolve;
+    script.onerror = reject;
+    document.body.appendChild(script);
+  });
+
+  return Boolean(window.Razorpay);
+};
 
 export default function CheckoutPage() {
   const { user } = useAuth();
@@ -37,6 +45,7 @@ export default function CheckoutPage() {
   });
   const [email, setEmail] = useState(user?.email || '');
   const [creatingOrder, setCreatingOrder] = useState(false);
+  const [paying, setPaying] = useState(false);
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [error, setError] = useState('');
   const [quote, setQuote] = useState({
@@ -115,21 +124,9 @@ export default function CheckoutPage() {
     JSON.stringify(items)
   ]);
 
-  const paymentElementOptions = useMemo(
-    () => ({
-      layout: 'tabs'
-    }),
-    []
-  );
-
   const handleCreateOrder = async (event) => {
     event.preventDefault();
     if (!items.length) return;
-
-    if (!stripePublishableKey || !stripePromise) {
-      setError('Stripe publishable key is missing. Configure VITE_STRIPE_PUBLISHABLE_KEY.');
-      return;
-    }
 
     setCreatingOrder(true);
     setError('');
@@ -151,7 +148,10 @@ export default function CheckoutPage() {
         orderId: data.orderId,
         trackingId: data.trackingId,
         lookupToken: data.lookupToken,
-        clientSecret: data.clientSecret,
+        razorpayOrderId: data.razorpayOrderId,
+        keyId: data.keyId,
+        amount: data.amount,
+        currency: data.currency,
         status: data.status
       });
 
@@ -162,6 +162,83 @@ export default function CheckoutPage() {
       setError(submitError.message);
     } finally {
       setCreatingOrder(false);
+    }
+  };
+
+  const handlePayNow = async () => {
+    if (!orderSession) return;
+    setError('');
+    setPaying(true);
+
+    try {
+      const sdkReady = await loadRazorpayCheckoutScript();
+      if (!sdkReady) {
+        throw new Error('Razorpay Checkout failed to load. Please try again.');
+      }
+
+      const razorpay = new window.Razorpay({
+        key: orderSession.keyId,
+        amount: orderSession.amount,
+        currency: orderSession.currency,
+        name: 'ThreadForge Studio',
+        description: `Order ${orderSession.trackingId}`,
+        order_id: orderSession.razorpayOrderId,
+        prefill: {
+          name: address.fullName,
+          email
+        },
+        notes: {
+          orderId: orderSession.orderId,
+          trackingId: orderSession.trackingId
+        },
+        theme: {
+          color: '#161616'
+        },
+        modal: {
+          ondismiss: () => setPaying(false)
+        },
+        handler: async (response) => {
+          try {
+            const verification = await api('/orders/verify-payment', {
+              method: 'POST',
+              body: JSON.stringify({
+                orderId: orderSession.orderId,
+                lookupToken: orderSession.lookupToken,
+                razorpayOrderId: response.razorpay_order_id,
+                razorpayPaymentId: response.razorpay_payment_id,
+                razorpaySignature: response.razorpay_signature
+              })
+            });
+
+            if (verification?.status === 'paid') {
+              window.location.assign(
+                `/#${buildSuccessPath(orderSession.orderId, orderSession.lookupToken)}`
+              );
+              return;
+            }
+
+            setError('Payment verification is pending. Please check order status in a moment.');
+          } catch (verificationError) {
+            setError(verificationError.message || 'Payment verification failed.');
+          } finally {
+            setPaying(false);
+          }
+        }
+      });
+
+      razorpay.on('payment.failed', (response) => {
+        const message =
+          response?.error?.description ||
+          response?.error?.reason ||
+          'Payment failed. Please retry.';
+        setError(message);
+        setPaying(false);
+      });
+
+      razorpay.open();
+    } catch (checkoutError) {
+      setError(checkoutError.message || 'Unable to start payment.');
+      setPaying(false);
     }
   };
 
@@ -177,41 +254,72 @@ export default function CheckoutPage() {
         <div className="rounded-[2rem] border border-black/8 bg-white/80 p-6 backdrop-blur">
           <form onSubmit={handleCreateOrder} className="grid gap-4 md:grid-cols-2">
             <Input label="Email" value={email} onChange={setEmail} type="email" />
-            <Input label="Full Name" value={address.fullName} onChange={(value) => setAddress((current) => ({ ...current, fullName: value }))} />
+            <Input
+              label="Full Name"
+              value={address.fullName}
+              onChange={(value) => setAddress((current) => ({ ...current, fullName: value }))}
+            />
             <div className="md:col-span-2">
-              <Input label="Address Line 1" value={address.line1} onChange={(value) => setAddress((current) => ({ ...current, line1: value }))} />
+              <Input
+                label="Address Line 1"
+                value={address.line1}
+                onChange={(value) => setAddress((current) => ({ ...current, line1: value }))}
+              />
             </div>
             <div className="md:col-span-2">
-              <Input label="Address Line 2" value={address.line2} onChange={(value) => setAddress((current) => ({ ...current, line2: value }))} />
+              <Input
+                label="Address Line 2"
+                value={address.line2}
+                onChange={(value) => setAddress((current) => ({ ...current, line2: value }))}
+              />
             </div>
-            <Input label="City" value={address.city} onChange={(value) => setAddress((current) => ({ ...current, city: value }))} />
-            <Input label="State" value={address.state} onChange={(value) => setAddress((current) => ({ ...current, state: value }))} />
-            <Input label="Postal Code" value={address.postalCode} onChange={(value) => setAddress((current) => ({ ...current, postalCode: value }))} />
-            <Input label="Country" value={address.country} onChange={(value) => setAddress((current) => ({ ...current, country: value }))} />
+            <Input
+              label="City"
+              value={address.city}
+              onChange={(value) => setAddress((current) => ({ ...current, city: value }))}
+            />
+            <Input
+              label="State"
+              value={address.state}
+              onChange={(value) => setAddress((current) => ({ ...current, state: value }))}
+            />
+            <Input
+              label="Postal Code"
+              value={address.postalCode}
+              onChange={(value) => setAddress((current) => ({ ...current, postalCode: value }))}
+            />
+            <Input
+              label="Country"
+              value={address.country}
+              onChange={(value) => setAddress((current) => ({ ...current, country: value }))}
+            />
 
             <button
               type="submit"
-              disabled={creatingOrder || !items.length}
+              disabled={creatingOrder || !items.length || paying}
               className="mt-2 w-full rounded-full bg-ink px-5 py-4 text-sm font-bold uppercase tracking-[0.2em] text-paper transition hover:-translate-y-0.5 active:scale-[0.99] disabled:opacity-50 md:col-span-2"
             >
-              {creatingOrder ? 'Preparing Payment...' : orderSession ? 'Refresh Payment Session' : 'Continue to Payment'}
+              {creatingOrder
+                ? 'Preparing Payment...'
+                : orderSession
+                  ? 'Refresh Payment Session'
+                  : 'Continue to Payment'}
             </button>
           </form>
 
-          {orderSession?.clientSecret ? (
+          {orderSession?.razorpayOrderId ? (
             <div className="mt-6 border-t border-black/10 pt-6">
               <p className="text-xs font-bold uppercase tracking-[0.22em] text-black/55">
                 Order {orderSession.trackingId}
               </p>
-              <Elements stripe={stripePromise} options={{ clientSecret: orderSession.clientSecret }}>
-                <PaymentForm
-                  orderSession={orderSession}
-                  paymentElementOptions={paymentElementOptions}
-                  successPath={buildSuccessPath(orderSession.orderId, orderSession.lookupToken)}
-                  stripeReturnUrl={buildStripeReturnUrl(orderSession.orderId, orderSession.lookupToken)}
-                  onError={setError}
-                />
-              </Elements>
+              <button
+                type="button"
+                onClick={handlePayNow}
+                disabled={paying || creatingOrder}
+                className="mt-4 w-full rounded-full bg-accent-gradient px-5 py-4 text-sm font-bold uppercase tracking-[0.2em] text-white shadow-glow transition hover:-translate-y-0.5 active:scale-[0.99] disabled:opacity-50"
+              >
+                {paying ? 'Processing Payment...' : 'Pay and Place Order'}
+              </button>
             </div>
           ) : null}
 
@@ -239,69 +347,13 @@ export default function CheckoutPage() {
             <span>{currency(quote.total)}</span>
           </div>
           <p className="mt-3 text-xs text-black/45">
-            {quoteLoading ? 'Updating delivery charges...' : 'Shipping and tax change based on delivery address.'}
+            {quoteLoading
+              ? 'Updating delivery charges...'
+              : 'Shipping and tax change based on delivery address.'}
           </p>
         </aside>
       </div>
     </div>
-  );
-}
-
-function PaymentForm({ orderSession, paymentElementOptions, successPath, stripeReturnUrl, onError }) {
-  const stripe = useStripe();
-  const elements = useElements();
-  const [processing, setProcessing] = useState(false);
-
-  const handlePayment = async (event) => {
-    event.preventDefault();
-    if (!stripe || !elements || !orderSession?.clientSecret) return;
-
-    setProcessing(true);
-    onError('');
-
-    try {
-      const { error, paymentIntent } = await stripe.confirmPayment({
-        elements,
-        confirmParams: {
-          return_url: stripeReturnUrl
-        },
-        redirect: 'if_required'
-      });
-
-      if (error) {
-        onError(error.message || 'Payment failed. Please retry.');
-        return;
-      }
-
-      if (paymentIntent?.status === 'succeeded') {
-        window.location.assign(`/#${successPath}`);
-        return;
-      }
-
-      if (paymentIntent?.status === 'processing' || paymentIntent?.status === 'requires_action') {
-        window.location.assign(`/#${successPath}`);
-        return;
-      }
-
-      onError('Payment is not complete yet. Please retry.');
-    } catch (submitError) {
-      onError(submitError.message || 'Network error while confirming payment.');
-    } finally {
-      setProcessing(false);
-    }
-  };
-
-  return (
-    <form onSubmit={handlePayment} className="space-y-4">
-      <PaymentElement options={paymentElementOptions} />
-      <button
-        type="submit"
-        disabled={!stripe || !elements || processing}
-        className="w-full rounded-full bg-accent-gradient px-5 py-4 text-sm font-bold uppercase tracking-[0.2em] text-white shadow-glow transition hover:-translate-y-0.5 active:scale-[0.99] disabled:opacity-50"
-      >
-        {processing ? 'Processing Payment...' : 'Pay and Place Order'}
-      </button>
-    </form>
   );
 }
 

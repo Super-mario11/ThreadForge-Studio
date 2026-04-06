@@ -64,7 +64,8 @@ const orderSchema = new mongoose.Schema(
       enum: ['pending', 'paid', 'processing', 'fulfilled', 'cancelled'],
       default: 'pending'
     },
-    paymentIntentId: String,
+    paymentProviderOrderId: String,
+    paymentProviderPaymentId: String,
     shippingAddress: {
       fullName: { type: String, required: true },
       line1: { type: String, required: true },
