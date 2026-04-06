@@ -15,6 +15,29 @@ const buildIdempotencyKey = () => {
 const buildSuccessPath = (orderId, lookupToken) =>
   `/order-success/${orderId}?lookupToken=${encodeURIComponent(lookupToken)}`;
 
+const FALLBACK_PREVIEW_URL = 'https://dummyimage.com/1200x1200/111111/ffffff.png&text=ThreadForge';
+
+const toCheckoutItems = (items) =>
+  (Array.isArray(items) ? items : [])
+    .map((item) => ({
+      productId: item?.productId || '',
+      quantity: Math.max(1, Number(item?.quantity || 1)),
+      previewUrl: item?.previewUrl || FALLBACK_PREVIEW_URL,
+      variant: {
+        size: item?.variant?.size || 'M',
+        color: item?.variant?.color || 'Black'
+      },
+      customization: {
+        prompt: item?.customization?.prompt || '',
+        frontCanvas: item?.customization?.frontCanvas || {},
+        backCanvas: item?.customization?.backCanvas || {},
+        printArea: Number.isFinite(Number(item?.customization?.printArea))
+          ? Number(item.customization.printArea)
+          : 55
+      }
+    }))
+    .filter((item) => item.productId);
+
 const loadRazorpayCheckoutScript = async () => {
   if (typeof window === 'undefined') return false;
   if (window.Razorpay) return true;
@@ -127,6 +150,11 @@ export default function CheckoutPage() {
   const handleCreateOrder = async (event) => {
     event.preventDefault();
     if (!items.length) return;
+    const checkoutItems = toCheckoutItems(items);
+    if (!checkoutItems.length) {
+      setError('Your cart has invalid items. Please re-add the product and try again.');
+      return;
+    }
 
     setCreatingOrder(true);
     setError('');
@@ -139,7 +167,7 @@ export default function CheckoutPage() {
         },
         body: JSON.stringify({
           email,
-          items,
+          items: checkoutItems,
           shippingAddress: address
         })
       });
